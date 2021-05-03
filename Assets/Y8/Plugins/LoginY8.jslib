@@ -1,6 +1,6 @@
-mergeInto(LibraryManager.library, 
+mergeInto(LibraryManager.library,
 {
-	Init: function( _appId )
+    Init: function( _appId )
     {
 		var appId = Pointer_stringify( _appId );
 
@@ -176,6 +176,5 @@ mergeInto(LibraryManager.library,
 				break;
         }
     }
-  
 
 });
