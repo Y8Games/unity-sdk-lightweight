@@ -1,3 +1,6 @@
-Temp/*
-.vscode
-*.csproj
+/*
+/*/
+!/Assets/
+!/ProjectSettings/
+!/Packages/
+!.gitignore
