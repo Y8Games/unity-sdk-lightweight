@@ -1,7 +1,4 @@
-﻿
-#if !UNITY_EDITOR
-
-// data structures for the JS responses to be deserialised into
+﻿// data structures for the JS responses to be deserialised into
 
 //
 // Auth Response - complex structure requires many classes...
@@ -77,7 +74,6 @@ public class JS_RiskElement
     public string request_ip = null;
 }
 
-
 //
 // achievement_save response
 //
@@ -92,7 +88,6 @@ public class JS_AchievementSave
     public string errormessage = "";
 };
 
-
 //
 // score_save response
 //
@@ -105,7 +100,6 @@ public class JS_ScoreSave
     public string errormessage = "";
 };
 
-
 //
 // set_data response
 //
@@ -116,7 +110,6 @@ public class JS_SetData
     public string status = "";
     public string key = "";
 };
-
 
 //
 // get_data response
@@ -129,7 +122,6 @@ public class JS_GetData
     public string key = "";
     public string jsondata = "";
 };
-
 
 //
 // custom_score response
@@ -162,7 +154,6 @@ public class JS_Score
     public string rdate;
 };
 
-
 //
 // tables response
 //
@@ -175,4 +166,8 @@ public class JS_ScoreTables
     public bool success;
 };
 
-#endif
+public class JsResponse<T>
+{
+    public bool isSuccess;
+    public T data;
+}
