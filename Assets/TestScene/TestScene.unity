@@ -4334,7 +4334,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   AppId: 60d371eb87f0fc58a896be9e
-  AdsId: 193693
+  AdsId: 
 --- !u!4 &1856873046
 Transform:
   m_ObjectHideFlags: 0

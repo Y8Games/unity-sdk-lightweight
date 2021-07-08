@@ -9,8 +9,13 @@ mergeInto(LibraryManager.library,
             {
                 // Triggered when the SDK is init
                 ID.Event.subscribe('id.init', function()
-                    {											
-						ID.ads.init(adsId);
+                    {		
+						if (adsId) {
+							ID.ads.init(adsId);
+						} else {
+							console.log("Ads ID is empty");
+						}									
+						
 						ID.GameAPI.init(appId, null, function(data, response)
 							{
 								//console.log(data, response);

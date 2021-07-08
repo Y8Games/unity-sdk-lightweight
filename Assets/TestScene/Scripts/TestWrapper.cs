@@ -1,110 +1,115 @@
 ﻿using UnityEngine;
-using UnityEngine.UI;
+using Y8API;
 
 public class TestWrapper : MonoBehaviour
 {
-    public void ButtonAutoLogin()
+    public async void ButtonAutoLogin()
     {
-        Y8.Instance.AutoLogin(LoginCompleted);
+        var response = await Y8.Instance.AutoLogin();
+        LogResponse(response);
     }
 
-    public void ButtonLogin()
+    public async void ButtonLogin()
     {
-        Y8.Instance.Login((id, obj, isSuccess) =>
-            {
-                if (isSuccess)
-                {
-                    Debug.Log("login succeeded! " + (obj != null ? obj.GetType().ToString() : "null"));
-                }
-                else
-                {
-                    Debug.Log("login failed!");
-                }
-            });
-        Debug.Log("Called login with Lambda Expression callback");
+        var response = await Y8.Instance.Login();
+        LogResponse(response);
     }
 
-    public void ButtonRegister()
+    public async void ButtonRegister()
     {
-        Y8.Instance.Register(RegisterCompleted);
+        var response = await Y8.Instance.Register();
+        LogResponse(response);
     }
 
-    public void ButtonShowAd()
+    public async void ButtonShowAd()
     {
-        Y8.Instance.ShowAd((id, obj, failed) => Debug.Log("Continue here"));
+        await Y8.Instance.ShowAd();
+        Debug.Log("Ad finished");
     }
 
-    public void ButtonAchievementList()
+    public async void ButtonAchievementList()
     {
-        Y8.Instance.AchievementList(GenericCompleted);
+        await Y8.Instance.AchievementList();
+        Debug.Log("Achievement list finished");
     }
 
-    public void ButtonAchievementSave()
+    public async void ButtonAchievementSave()
     {
-        Y8.Instance.AchievementSave(GenericCompleted, "TestAchievement", "67ca8e11e839cd902960", false, false);
+        var response = await Y8.Instance.AchievementSave("TestAchievement", "67ca8e11e839cd902960", false, false);
+        LogResponse(response);
     }
 
-    public void ButtonTables()
+    public async void ButtonTables()
     {
-        Y8.Instance.Tables(GenericCompleted);
+        var response = await Y8.Instance.Tables();
+        LogResponse(response);
     }
 
-    public void ButtonCustomScore()
+    public async void ButtonCustomScore()
     {
-        Y8.Instance.CustomScore(GenericCompleted, "test table", "alltime", 20, 1, true);
+        var response = await Y8.Instance.CustomScore("test table", "alltime", 20, 1, true);
+        LogResponse(response);
     }
 
-    public void ButtonScoreList()
+    public async void ButtonScoreList()
     {
-        Y8.Instance.ScoreList(GenericCompleted, "test table", "alltime", true, false);
+        await Y8.Instance.ScoreList("test table", "alltime", true, false);
+        Debug.Log("Score list finished");
     }
 
-    public void ButtonScoreSave()
+    public async void ButtonScoreSave()
     {
         int exampleScore = 3001 + Random.Range(0, 1000);
-        Y8.Instance.ScoreSave(GenericCompleted, "test table", exampleScore, false, true, "Test Player Name");
+        var response = await Y8.Instance.ScoreSave("test table", exampleScore, false, true);
+        LogResponse(response);
     }
 
-    public void ButtonAppRequest()
+    public async void ButtonAppRequest()
     {
-        Y8.Instance.AppRequest(GenericCompleted, "Play with me!", "https://y8.com", "");
+        await Y8.Instance.AppRequest("Play with me!", "https://y8.com", "");
+        Debug.Log("App request finished");
     }
 
-    public void ButtonFriendRequest()
+    public async void ButtonFriendRequest()
     {
-        Y8.Instance.FriendRequest(GenericCompleted, "574da07ee694aa5032001626", "http://id.net/");
+        await Y8.Instance.FriendRequest("574da07ee694aa5032001626", "http://id.net/");
+        Debug.Log("Friend request finished");
     }
 
-    public void ButtonSetData()
+    public async void ButtonSetData()
     {
-        Y8.Instance.SetData((id, obj, isSuccess) =>
-            {
-                if (isSuccess)
-                {
-                    Debug.Log("Y8 call succeeded! id = " + id.ToString());
-                }
-                else
-                {
-                    Debug.Log("Y8 call failed! id = " + id.ToString());
-                }
-            },
-            "test_key", "monkey");
+        var response = await Y8.Instance.SetData("test_key", "monkey");
+        LogResponse(response);
     }
 
-    public void ButtonGetData()
+    public async void ButtonGetData()
     {
-        Y8.Instance.GetData(GenericCompleted, "test_key");
+        var response = await Y8.Instance.GetData("test_key");
+        LogResponse(response);
     }
 
-    public void ButtonClearData()
+    public async void ButtonClearData()
     {
-        Y8.Instance.ClearData(GenericCompleted, "test_key");
+        var response = await Y8.Instance.ClearData("test_key");
+        LogResponse(response);
+    }
+
+    public async void ButtonIsSponsor()
+    {
+        var response = await Y8.Instance.IsSponsor();
+        Debug.Log($"Is Success: {response.IsSuccess}, Is Sponsor: {response.Data}");
+    }
+
+    public async void ButtonIsBlacklisted()
+    {
+        var response = await Y8.Instance.IsBlacklisted();
+        Debug.Log($"Is Success: {response.IsSuccess}, Is Blacklisted: {response.Data}");
     }
 
     public void ButtonGetInstantValues()
     {
         string debug =
-            "logged in=" + Y8.Instance.LoggedIn().ToString() +
+            "logged in=" + Y8.Instance.IsLoggedIn().ToString() +
             " nickname=" + Y8.Instance.Nickname() +
             " first name=" + Y8.Instance.FirstName() +
             " token=" + Y8.Instance.SessionToken() +
@@ -116,53 +121,8 @@ public class TestWrapper : MonoBehaviour
         Debug.Log(debug);
     }
 
-    public void ButtonIsSponsor()
+    private void LogResponse<T>(JsResponse<T> response)
     {
-        Y8.Instance.IsSponsor((id, obj, isSuccess) => { Debug.Log($"Success: {isSuccess}, is sponsor: {(bool)obj}"); });
-    }
-
-    public void ButtonIsBlacklisted()
-    {
-        Y8.Instance.IsBlacklisted((id, obj, isSuccess) => { Debug.Log($"Success: {isSuccess}, is blacklisted: {(bool)obj}"); });
-    }
-
-    //
-    // callback functions when wrapper completes an action
-    //
-
-    private void LoginCompleted(int id, object obj, bool isSuccess)
-    {
-        if (isSuccess)
-        {
-            Debug.Log("login succeeded! id = " + id.ToString());
-        }
-        else
-        {
-            Debug.Log("login failed! id = " + id.ToString());
-        }
-    }
-
-    private void RegisterCompleted(int id, object obj, bool isSuccess)
-    {
-        if (isSuccess)
-        {
-            Debug.Log("register user succeeded! id = " + id.ToString());
-        }
-        else
-        {
-            Debug.Log("register user failed! id = " + id.ToString());
-        }
-    }
-
-    private void GenericCompleted(int id, object obj, bool isSuccess)
-    {
-        if (isSuccess)
-        {
-            Debug.Log("Y8 call succeeded! id = " + id.ToString());
-        }
-        else
-        {
-            Debug.Log("Y8 call failed! id = " + id.ToString());
-        }
+        Debug.Log($"Is Success: {response.IsSuccess}, Data: {JsonUtility.ToJson(response.Data)}");
     }
 }
