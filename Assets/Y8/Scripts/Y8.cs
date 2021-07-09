@@ -35,6 +35,10 @@ namespace Y8API
                 Instance = this;
                 gameObject.name = calleeName;
                 transform.SetParent(null);
+
+                AppId = AppId.Trim();
+                AdsId = AdsId.Trim();
+
                 Init(AppId, AdsId);
 
                 DontDestroyOnLoad(Instance.gameObject);
@@ -98,14 +102,19 @@ namespace Y8API
 
         public async Task ShowAd()
         {
-            if (!string.IsNullOrEmpty(AdsId))
+            if (Screen.fullScreen)
             {
-                await TryCall<Empty>("show_ad", null);
+                Debug.Log("Game is running in fullscreen mode, skipping ads");
+                return;
             }
-            else
+
+            if (string.IsNullOrEmpty(AdsId))
             {
                 Debug.Log("Ads ID is not set! Please contact the support to receive it if you want to show ads");
+                return;
             }
+
+            await TryCall<Empty>("show_ad", null);
         }
 
         /// <summary>
