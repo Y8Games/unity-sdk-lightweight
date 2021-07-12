@@ -5,6 +5,7 @@
 2) Drag and drop the prefab from Assets > Y8 > Y8Root into your main scene (for example preloader or splash screen scene)
 3) go to https://account.y8.com/applications and create new application
 4) Copy paste the application ID into the Y8Root prefab in your scene (also ask support for Ads Id if you are partner)
+5) When building WebGL, use the Y8 template `Y8_2020_LTS` 
 
 ## How to use Y8 functions
 1) Add `using Y8API;` to your using directives
