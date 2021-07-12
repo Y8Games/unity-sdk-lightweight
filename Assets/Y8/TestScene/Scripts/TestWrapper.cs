@@ -5,104 +5,104 @@ public class TestWrapper : MonoBehaviour
 {
     public async void ButtonAutoLogin()
     {
-        var response = await Y8.Instance.AutoLogin();
+        var response = await Y8.Instance.AutoLoginAsync();
         LogResponse(response);
     }
 
     public async void ButtonLogin()
     {
-        var response = await Y8.Instance.Login();
+        var response = await Y8.Instance.LoginAsync();
         LogResponse(response);
     }
 
     public async void ButtonRegister()
     {
-        var response = await Y8.Instance.Register();
+        var response = await Y8.Instance.RegisterAsync();
         LogResponse(response);
     }
 
     public async void ButtonShowAd()
     {
-        await Y8.Instance.ShowAd();
+        await Y8.Instance.ShowAdAsync();
         Debug.Log("Ad finished");
     }
 
     public async void ButtonAchievementList()
     {
-        await Y8.Instance.AchievementList();
+        await Y8.Instance.ShowAchievementListAsync();
         Debug.Log("Achievement list finished");
     }
 
     public async void ButtonAchievementSave()
     {
-        var response = await Y8.Instance.AchievementSave("TestAchievement", "67ca8e11e839cd902960", false, false);
+        var response = await Y8.Instance.SaveAchievementAsync("TestAchievement", "67ca8e11e839cd902960", false, false);
         LogResponse(response);
     }
 
     public async void ButtonTables()
     {
-        var response = await Y8.Instance.Tables();
+        var response = await Y8.Instance.GetTableNamesAsync();
         LogResponse(response);
     }
 
     public async void ButtonCustomScore()
     {
-        var response = await Y8.Instance.CustomScore("test table", "alltime", 20, 1, true);
+        var response = await Y8.Instance.GetCustomScoreAsync("test table", "alltime", 20, 1, true);
         LogResponse(response);
     }
 
     public async void ButtonScoreList()
     {
-        await Y8.Instance.ScoreList("test table", "alltime", true, false);
+        await Y8.Instance.ShowScoreListAsync("test table", "alltime", true, false);
         Debug.Log("Score list finished");
     }
 
     public async void ButtonScoreSave()
     {
         int exampleScore = 3001 + Random.Range(0, 1000);
-        var response = await Y8.Instance.ScoreSave("test table", exampleScore, false, true);
+        var response = await Y8.Instance.SaveScoreAsync("test table", exampleScore, false, true);
         LogResponse(response);
     }
 
     public async void ButtonAppRequest()
     {
-        await Y8.Instance.AppRequest("Play with me!", "https://y8.com", "");
+        await Y8.Instance.AppRequestAsync("Play with me!", "https://y8.com", "");
         Debug.Log("App request finished");
     }
 
     public async void ButtonFriendRequest()
     {
-        await Y8.Instance.FriendRequest("574da07ee694aa5032001626", "http://id.net/");
+        await Y8.Instance.FriendRequestAsync("574da07ee694aa5032001626", "http://id.net/");
         Debug.Log("Friend request finished");
     }
 
     public async void ButtonSetData()
     {
-        var response = await Y8.Instance.SetData("test_key", "monkey");
+        var response = await Y8.Instance.SetDataAsync("test_key", "monkey");
         LogResponse(response);
     }
 
     public async void ButtonGetData()
     {
-        var response = await Y8.Instance.GetData("test_key");
+        var response = await Y8.Instance.GetDataAsync("test_key");
         LogResponse(response);
     }
 
     public async void ButtonClearData()
     {
-        var response = await Y8.Instance.ClearData("test_key");
+        var response = await Y8.Instance.ClearDataAsync("test_key");
         LogResponse(response);
     }
 
     public async void ButtonIsSponsor()
     {
-        var response = await Y8.Instance.IsSponsor();
+        var response = await Y8.Instance.IsSponsorAsync();
         Debug.Log($"Is Success: {response.IsSuccess}, Is Sponsor: {response.Data}");
     }
 
     public async void ButtonIsBlacklisted()
     {
-        var response = await Y8.Instance.IsBlacklisted();
+        var response = await Y8.Instance.IsBlacklistedAsync();
         Debug.Log($"Is Success: {response.IsSuccess}, Is Blacklisted: {response.Data}");
     }
 
