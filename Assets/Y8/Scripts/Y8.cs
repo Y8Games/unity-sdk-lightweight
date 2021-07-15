@@ -49,10 +49,19 @@ namespace Y8API
             }
         }
 
-#if UNITY_EDITOR
+#if UNITY_EDITOR || !UNITY_WEBGL
 
         private static void Init(string appId, string adsId)
         {
+#if !UNITY_WEBGL
+            Debug.LogWarning($"Y8 API calls do not work for {Application.platform}!");
+            return;
+#endif
+            if (string.IsNullOrEmpty(appId))
+            {
+                Debug.LogError("AppId is not filled, on Y8Root! Get yours here: https://account.y8.com/applications");
+            }
+
             Debug.Log($"Y8.Init: {appId}, ads: {adsId}");
             isReady = true;
         }
@@ -66,11 +75,11 @@ namespace Y8API
         }
 
 #else
-    // bindings for JS functions in Y8.jslib
-    [DllImport("__Internal")]
-    private static extern void Init(string _AppId, string _AdsId);
-    [DllImport("__Internal")]
-    private static extern void Call(int _id, string _request, string _jsonData);
+        // bindings for JS functions in Y8.jslib
+        [DllImport("__Internal")]
+        private static extern void Init(string _AppId, string _AdsId);
+        [DllImport("__Internal")]
+        private static extern void Call(int _id, string _request, string _jsonData);
 #endif
 
         /// <summary>
