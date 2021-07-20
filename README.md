@@ -10,7 +10,7 @@
 ## How to use Y8 functions
 1) Add `using Y8API;` to your using directives
 2) Call awaitable methods on Y8, for example `var loginInfo = await Y8.Instance.LoginAsync();` 
-3) Check *TestScene* for all available methods and usage 
+3) Check *[TestScene](https://github.com/Y8Games/unity-sdk-lightweight/blob/main/Assets/Y8/TestScene/Scripts/TestWrapper.cs)* for all available methods and usage 
 
 ## Ads guidelines
 - You will need to be approved as a Y8 partner first, please contact the support to receive AdsID
