@@ -557,6 +557,12 @@ namespace Y8API
                 return new JsResponse<T>(false, default);
             }
 
+            if (Application.isEditor)
+            {
+                Debug.Log($"Fake editor response for: \"{requestName}\"");
+                return new JsResponse<T>(false, default);
+            }
+
             id++;
             int callId = id;
 
