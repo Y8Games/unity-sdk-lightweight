@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using System.Threading.Tasks;
+using UnityEngine;
 using Y8API;
 
 public class TestWrapper : MonoBehaviour
@@ -106,6 +108,31 @@ public class TestWrapper : MonoBehaviour
         Debug.Log($"Is Success: {response.IsSuccess}, Is Blacklisted: {response.Data}");
     }
 
+    public async void TakeScreenshot()
+    {
+#pragma warning disable IDE0059 // Unnecessary assignment of a value
+        Texture2D screenshotTexture = null;
+#pragma warning restore IDE0059 // Unnecessary assignment of a value
+        StartCoroutine(TakeScreenshotCoroutine());
+
+        while (screenshotTexture == null) await Task.Yield();
+        var response = await Y8.Instance.SaveScreenshotAsync(screenshotTexture);
+        
+        if (response.IsSuccess)
+        {
+            Debug.Log($"Screenshot saved to {response.Data.image}");
+        }
+
+        // WebGL clears every frame, needs to be triggered at EndOfFrame. Local method is used to keep the async/await
+        IEnumerator TakeScreenshotCoroutine()
+        {
+            yield return new WaitForEndOfFrame();
+            screenshotTexture = ScreenCapture.CaptureScreenshotAsTexture();            
+        }
+    }
+
+
+
     public void ButtonGetInstantValues()
     {
         string debug =
@@ -120,6 +147,8 @@ public class TestWrapper : MonoBehaviour
             " locale=" + Y8.Instance.Locale();
         Debug.Log(debug);
     }
+
+
 
     private void LogResponse<T>(JsResponse<T> response)
     {

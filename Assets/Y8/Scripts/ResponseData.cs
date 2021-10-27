@@ -141,6 +141,14 @@ namespace Y8API
     };
 
     [Serializable]
+    public class SavedScreenshot
+    {
+        public bool success;
+        public string message;
+        public string image;
+    }
+
+    [Serializable]
     public class JsResponse<T>
     {
         public bool IsSuccess { get; }

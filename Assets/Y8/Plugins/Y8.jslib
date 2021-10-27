@@ -182,6 +182,10 @@ mergeInto(LibraryManager.library,
 			case 'sponsor':
 				ID.Protection.isSponsor(idCallback.bind(this));
 				break;
+
+			case 'save_screenshot':				
+				ID.submit_image(jsonData['data'], idCallback.bind(this));
+				break;
         }
     }
 
