@@ -404,6 +404,12 @@ namespace Y8API
         /// <returns></returns>
         public async Task<JsResponse<SavedScreenshot>> SaveScreenshotAsync(Texture2D screenshotTexture)
         {
+            if (!IsLoggedIn())
+            {
+                Debug.Log("Player is not logged in! Can't save screenshot");
+                return new JsResponse<SavedScreenshot>(false, default);
+            }
+
             byte[] screenshotData = screenshotTexture.EncodeToJPG();
             string screenshotDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(screenshotData)}";  
 
