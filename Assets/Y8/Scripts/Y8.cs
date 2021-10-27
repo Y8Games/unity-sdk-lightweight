@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 #endif
 
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
@@ -310,6 +311,8 @@ namespace Y8API
             await TryCallAsync<Empty>("share", json);
         }
 
+
+
         /// <summary>
         /// https://docs.y8.com/docs/javascript/online-saves/
         /// Save the value, for later retrieval using the key.
@@ -391,7 +394,30 @@ namespace Y8API
         /// <returns>true if it is</returns>
         public async Task<JsResponse<bool>> IsSponsorAsync()
         {
+
             return await TryCallAsync<bool>("sponsor", null);
+        }
+        /// <summary>
+        /// Saves a texture as a screenshot. Use coroutine with WaitForEndOfFrame if you are using CaptureScreenshotAsTexture
+        /// </summary>
+        /// <param name="screenshotTexture"></param>
+        /// <returns></returns>
+        public async Task<JsResponse<SavedScreenshot>> SaveScreenshotAsync(Texture2D screenshotTexture)
+        {
+            if (!IsLoggedIn())
+            {
+                Debug.Log("Player is not logged in! Can't save screenshot");
+                return new JsResponse<SavedScreenshot>(false, default);
+            }
+
+            byte[] screenshotData = screenshotTexture.EncodeToJPG();
+            string screenshotDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(screenshotData)}";  
+
+            KeyValuePair<string, string>[] json = {
+                new KeyValuePair<string, string>("data", screenshotDataUrl)
+            };
+
+            return await TryCallAsync<SavedScreenshot>("save_screenshot", json);
         }
 
         ///
@@ -684,6 +710,10 @@ namespace Y8API
                     response = new JsResponse<bool>(true, isTrue);
                     break;
 
+                case "save_screenshot":
+                    SavedScreenshot savedScreenshot = JsonUtility.FromJson<SavedScreenshot>(responseData);
+                    response = new JsResponse<SavedScreenshot>(savedScreenshot.success, savedScreenshot);
+                    break;
                 default:
                     Debug.Log($"Unhandled request type: {request}");
                     break;
