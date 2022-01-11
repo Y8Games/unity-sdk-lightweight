@@ -136,6 +136,10 @@ namespace Y8API
             await TryCallAsync<Empty>("achievement_list", null);
         }
 
+        public async Task<JsResponse<AchievementsData>> GetAchievements() {
+            return await TryCallAsync<AchievementsData>("get_achievements", null);
+        }
+
         /// <summary>
         /// https://docs.y8.com/docs/javascript/game-api/
         /// </summary>
@@ -667,6 +671,11 @@ namespace Y8API
                 case "achievement_save":
                     AchievementSave achSave = JsonUtility.FromJson<AchievementSave>(responseData);
                     response = new JsResponse<AchievementSave>(achSave.success, achSave);
+                    break;
+
+                case "get_achievements":
+                    AchievementsData achievementsData = JsonUtility.FromJson<AchievementsData>(responseData);
+                    response = new JsResponse<AchievementsData>(achievementsData.success, achievementsData);
                     break;
 
                 case "score_save":

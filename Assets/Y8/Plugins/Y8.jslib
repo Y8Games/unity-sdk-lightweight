@@ -129,11 +129,15 @@ mergeInto(LibraryManager.library,
 			case 'achievement_list':
 				ID.GameAPI.Achievements.list(null);
 				break;
+			
+			case 'get_achievements':
+				ID.GameAPI.Achievements.listCustom({}, idCallbackData.bind(this));
+				break;
 
 			case 'achievement_save':
 				ID.GameAPI.Achievements.save(jsonData, idCallbackData.bind(this));
 				break;
-
+				
 			case 'tables':
 				ID.GameAPI.Leaderboards.tables(null, idCallbackData.bind(this));
 				break;

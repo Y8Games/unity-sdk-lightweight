@@ -35,6 +35,12 @@ public class TestWrapper : MonoBehaviour
         Debug.Log("Achievement list finished");
     }
 
+    public async void ButtonGetAchievements()
+    {
+        var response = await Y8.Instance.GetAchievements();
+        LogResponse(response);
+    }
+
     public async void ButtonAchievementSave()
     {
         var response = await Y8.Instance.SaveAchievementAsync("TestAchievement", "67ca8e11e839cd902960", false, false);
@@ -117,7 +123,7 @@ public class TestWrapper : MonoBehaviour
 
         while (screenshotTexture == null) await Task.Yield();
         var response = await Y8.Instance.SaveScreenshotAsync(screenshotTexture);
-        
+
         if (response.IsSuccess)
         {
             Debug.Log($"Screenshot saved to {response.Data.image}");
@@ -127,11 +133,9 @@ public class TestWrapper : MonoBehaviour
         IEnumerator TakeScreenshotCoroutine()
         {
             yield return new WaitForEndOfFrame();
-            screenshotTexture = ScreenCapture.CaptureScreenshotAsTexture();            
+            screenshotTexture = ScreenCapture.CaptureScreenshotAsTexture();
         }
     }
-
-
 
     public void ButtonGetInstantValues()
     {
@@ -147,8 +151,6 @@ public class TestWrapper : MonoBehaviour
             " locale=" + Y8.Instance.Locale();
         Debug.Log(debug);
     }
-
-
 
     private void LogResponse<T>(JsResponse<T> response)
     {

@@ -83,6 +83,36 @@ namespace Y8API
     };
 
     [Serializable]
+    public class AchievementsData
+    {
+        public int errorcode = 0;
+        public bool success = false;
+        public Achievement[] achievements;
+    }
+
+    [Serializable]
+    public class Achievement
+    {
+        public string difficulty;
+        public bool secret = false;
+        public string achievement;
+        public string icon;
+        public string achievementkey;
+        public string description;
+        public int awarded;
+        public PlayerAchievement player;
+    }
+
+    [Serializable]
+    public class PlayerAchievement
+    {
+        public int date;
+        public string rdate;
+        public string playername;
+        public string playerid;
+    }
+
+    [Serializable]
     public class ScoreSave
     {
         public int errorcode = 0;
