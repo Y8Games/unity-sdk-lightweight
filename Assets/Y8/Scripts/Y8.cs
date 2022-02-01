@@ -155,11 +155,11 @@ namespace Y8API
                 return new JsResponse<AchievementSave>(false, default);
             }
 
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("achievement", achievement),
-                new KeyValuePair<string, string>("achievementkey", achievementkey),
-                new KeyValuePair<string, string>("overwrite", overwrite.ToString().ToLower()),
-                new KeyValuePair<string, string>("allowduplicates", allowduplicates.ToString().ToLower())
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("achievement", achievement),
+                new KeyValuePair<string, IConvertible>("achievementkey", achievementkey),
+                new KeyValuePair<string, IConvertible>("overwrite", overwrite),
+                new KeyValuePair<string, IConvertible>("allowduplicates", allowduplicates)
             };
 
             return await TryCallAsync<AchievementSave>("achievement_save", json);
@@ -185,16 +185,16 @@ namespace Y8API
         /// <param name="playerid">(optional) A string representing the player’s id or pid. Used for getting the player’s score(s)</param>
         public async Task<JsResponse<ScoreTable>> GetCustomScoreAsync(string table, string mode = "alltime", int perPage = 20, int page = 1, bool highest = true, string playerid = "")
         {
-            List<KeyValuePair<string, string>> json = new List<KeyValuePair<string, string>> {
-            new KeyValuePair<string, string>("table", table),
-            new KeyValuePair<string, string>("mode", mode),
-            new KeyValuePair<string, string>("perPage", perPage.ToString()),
-            new KeyValuePair<string, string>("page", page.ToString()),
-            new KeyValuePair<string, string>("highest", highest.ToString().ToLower())
+            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
+            new KeyValuePair<string, IConvertible>("table", table),
+            new KeyValuePair<string, IConvertible>("mode", mode),
+            new KeyValuePair<string, IConvertible>("perPage", perPage),
+            new KeyValuePair<string, IConvertible>("page", page),
+            new KeyValuePair<string, IConvertible>("highest", highest)
         };
             if (playerid != "")
             {
-                json.Add(new KeyValuePair<string, string>("playerid", playerid));
+                json.Add(new KeyValuePair<string, IConvertible>("playerid", playerid));
             }
 
             return await TryCallAsync<ScoreTable>("custom_score", json.ToArray());
@@ -210,15 +210,14 @@ namespace Y8API
         /// <param name="useMilli">(optional)(default: false) Render scores in milliseconds.</param>
         public async Task ShowScoreListAsync(string tableTitle, string mode = "alltime", bool highest = true, bool useMilli = false)
         {
-            List<KeyValuePair<string, string>> json = new List<KeyValuePair<string, string>> {
-            new KeyValuePair<string, string>("table", tableTitle),
-            new KeyValuePair<string, string>("mode", mode),
-            new KeyValuePair<string, string>("highest", highest.ToString().ToLower())
+            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
+            new KeyValuePair<string, IConvertible>("table", tableTitle),
+            new KeyValuePair<string, IConvertible>("mode", mode),
+            new KeyValuePair<string, IConvertible>("highest", highest)
         };
             if (useMilli)
-            {
-                // NOTE: JS SDK will useMilli even if it is 'false', the only way to prevent this is to leave it undefined
-                json.Add(new KeyValuePair<string, string>("useMilli", useMilli.ToString().ToLower()));
+            {              
+                json.Add(new KeyValuePair<string, IConvertible>("useMilli", useMilli));
             }
 
             await TryCallAsync<Empty>("score_list", json.ToArray());
@@ -240,12 +239,12 @@ namespace Y8API
                 return new JsResponse<ScoreSave>(false, default);
             }
 
-            List<KeyValuePair<string, string>> json = new List<KeyValuePair<string, string>> {
-                new KeyValuePair<string, string>("table", table),
-                new KeyValuePair<string, string>("points", points.ToString()),
-                new KeyValuePair<string, string>("allowduplicates", allowduplicates.ToString().ToLower()),
-                new KeyValuePair<string, string>("highest", highest.ToString().ToLower()),
-                new KeyValuePair<string, string>("playername", Nickname())
+            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
+                new KeyValuePair<string, IConvertible>("table", table),
+                new KeyValuePair<string, IConvertible>("points", points),
+                new KeyValuePair<string, IConvertible>("allowduplicates", allowduplicates),
+                new KeyValuePair<string, IConvertible>("highest", highest),
+                new KeyValuePair<string, IConvertible>("playername", Nickname())
             };
 
             return await TryCallAsync<ScoreSave>("score_save", json.ToArray());
@@ -263,11 +262,11 @@ namespace Y8API
         /// <param name="data">Arbitrary string that can store some data for your application.It will not be seen by the user.</param>
         public async Task AppRequestAsync(string message = "<message>", string redirect_uri = "", string data = "")
         {
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("method", "apprequests"),
-                new KeyValuePair<string, string>("message", message),
-                new KeyValuePair<string, string>("redirect_uri", redirect_uri),
-                new KeyValuePair<string, string>("data", data)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("method", "apprequests"),
+                new KeyValuePair<string, IConvertible>("message", message),
+                new KeyValuePair<string, IConvertible>("redirect_uri", redirect_uri),
+                new KeyValuePair<string, IConvertible>("data", data)
             };
 
             await TryCallAsync<Empty>("app_request", json);
@@ -281,10 +280,10 @@ namespace Y8API
         /// <param name="id">PID of the user in the application.</param>
         public async Task FriendRequestAsync(string _id, string redirect_uri = "")
         {
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("method", "friends"),
-                new KeyValuePair<string, string>("id", _id),
-                new KeyValuePair<string, string>("redirect_uri", redirect_uri)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("method", "friends"),
+                new KeyValuePair<string, IConvertible>("id", _id),
+                new KeyValuePair<string, IConvertible>("redirect_uri", redirect_uri)
             };
 
             await TryCallAsync<Empty>("friend_request", json);
@@ -303,13 +302,13 @@ namespace Y8API
         /// <param name="picture">The picture of the content to share.Has to be an absolute URL.</param>
         public async Task ShareAsync(string link, string description, string name = "", string caption = "", string picture = "")
         {
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("method", "feed"),
-                new KeyValuePair<string, string>("link", link),
-                new KeyValuePair<string, string>("description", description),
-                new KeyValuePair<string, string>("name", name),
-                new KeyValuePair<string, string>("caption", caption),
-                new KeyValuePair<string, string>("picture", picture),
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("method", "feed"),
+                new KeyValuePair<string, IConvertible>("link", link),
+                new KeyValuePair<string, IConvertible>("description", description),
+                new KeyValuePair<string, IConvertible>("name", name),
+                new KeyValuePair<string, IConvertible>("caption", caption),
+                new KeyValuePair<string, IConvertible>("picture", picture),
             };
 
             await TryCallAsync<Empty>("share", json);
@@ -333,9 +332,9 @@ namespace Y8API
                 return new JsResponse<SetData>(false, default);
             }
 
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("key", key),
-                new KeyValuePair<string, string>("value", value)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("key", key),
+                new KeyValuePair<string, IConvertible>("value", value)
             };
 
             return await TryCallAsync<SetData>("set_data", json);
@@ -355,8 +354,8 @@ namespace Y8API
                 return new JsResponse<GetData>(false, default);
             }
 
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("key", key)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("key", key)
             };
 
             return await TryCallAsync<GetData>("get_data", json);
@@ -376,8 +375,8 @@ namespace Y8API
                 return new JsResponse<SetData>(false, default);
             }
 
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("key", key)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("key", key)
             };
 
             return await TryCallAsync<SetData>("clear_data", json);
@@ -417,8 +416,8 @@ namespace Y8API
             byte[] screenshotData = screenshotTexture.EncodeToJPG();
             string screenshotDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(screenshotData)}";  
 
-            KeyValuePair<string, string>[] json = {
-                new KeyValuePair<string, string>("data", screenshotDataUrl)
+            KeyValuePair<string, IConvertible>[] json = {
+                new KeyValuePair<string, IConvertible>("data", screenshotDataUrl)
             };
 
             return await TryCallAsync<SavedScreenshot>("save_screenshot", json);
@@ -579,7 +578,7 @@ namespace Y8API
         // general helpers for the SDK feature calls
         //
 
-        private async Task<JsResponse<T>> TryCallAsync<T>(string requestName, KeyValuePair<string, string>[] kvPairs)
+        private async Task<JsResponse<T>> TryCallAsync<T>(string requestName, KeyValuePair<string, IConvertible>[] kvPairs)
         {
             if (!isReady)
             {
@@ -608,20 +607,31 @@ namespace Y8API
             return (JsResponse<T>)response;
         }
 
-        private static string ConvertListToJson(KeyValuePair<string, string>[] _kvList)
+        private static string ConvertListToJson(KeyValuePair<string, IConvertible>[] _kvList)
         {
             if (_kvList == null) return "";
 
-            // output format is:
-            // { "key1":"value1 string", "key2":"value2 \"second\" string" }
             string s = "{ ";
             for (int i = 0, l = _kvList.Length; i < l; i++)
             {
-                // we wrap the Value in quotes, so we have to escape all the quotes it contains
-                s += '"' + _kvList[i].Key + '"'
-                + ":"
-                + '"' + _kvList[i].Value.Replace("\"", "\\" + "\"") + '"'
-                + ((i < l - 1) ? ", " : "");
+                s += $"\"{_kvList[i].Key}\":";
+                if (_kvList[i].Value is string stringValue)
+                {
+                    s += $"\"{stringValue}\"";
+                }
+                else if (_kvList[i].Value is bool boolValue)
+                {
+                    s += boolValue.ToString().ToLower();
+                }
+                else
+                {
+                    s += _kvList[i].Value;
+                }
+
+                if (i + 1 < _kvList.Length)
+                {
+                    s += ",";
+                }
             }
             s += " }";
 
