@@ -89,7 +89,7 @@ mergeInto(LibraryManager.library,
         var idCallbackList = function()
         {
 			SendMessage('Y8_Root', 'CallbackResponse', request + '[' + _id + ']=' + '{}');
-			ID.Event.unsubscribe('dialog.hide', idCallbackList);
+			ID.Event.clear('dialog.hide');
         }
 
         // callback to capture data and response and send it to c#
