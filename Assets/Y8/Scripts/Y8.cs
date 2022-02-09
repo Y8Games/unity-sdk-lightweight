@@ -18,6 +18,7 @@ namespace Y8API
 
         [Header("ENTER APP ID HERE")] public string AppId = "";
         [Header("ENTER ADS ID HERE (optional)")] public string AdsId = "";
+        [SerializeField] public bool showDebugMessages;
 
         private int id = 10000;
 
@@ -114,13 +115,13 @@ namespace Y8API
         {
             if (Screen.fullScreen)
             {
-                Debug.Log("Game is running in fullscreen mode, skipping ads");
+                TryDebugLog("Game is running in fullscreen mode, skipping ads");
                 return;
             }
 
             if (string.IsNullOrEmpty(AdsId))
             {
-                Debug.Log("Ads ID is not set! Please contact the support to receive it if you want to show ads");
+                TryDebugLog("Ads ID is not set! Please contact the support to receive it if you want to show ads");
                 return;
             }
 
@@ -151,7 +152,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't use AchievementSave");
+                TryDebugLog("Player is not logged in! Can't use AchievementSave");
                 return new JsResponse<AchievementSave>(false, default);
             }
 
@@ -235,7 +236,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't use ScoreSave");
+                TryDebugLog("Player is not logged in! Can't use ScoreSave");
                 return new JsResponse<ScoreSave>(false, default);
             }
 
@@ -328,7 +329,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't use SetData");
+                TryDebugLog("Player is not logged in! Can't use SetData");
                 return new JsResponse<SetData>(false, default);
             }
 
@@ -350,7 +351,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't use GetData");
+                TryDebugLog("Player is not logged in! Can't use GetData");
                 return new JsResponse<GetData>(false, default);
             }
 
@@ -371,7 +372,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't use ClearData");
+                TryDebugLog("Player is not logged in! Can't use ClearData");
                 return new JsResponse<SetData>(false, default);
             }
 
@@ -409,7 +410,7 @@ namespace Y8API
         {
             if (!IsLoggedIn())
             {
-                Debug.Log("Player is not logged in! Can't save screenshot");
+                TryDebugLog("Player is not logged in! Can't save screenshot");
                 return new JsResponse<SavedScreenshot>(false, default);
             }
 
@@ -582,13 +583,13 @@ namespace Y8API
         {
             if (!isReady)
             {
-                Debug.Log("SDK is not ready");
+                TryDebugLog("SDK is not ready");
                 return new JsResponse<T>(false, default);
             }
 
             if (Application.isEditor)
             {
-                Debug.Log($"Fake editor response for: \"{requestName}\"");
+                TryDebugLog($"Fake editor response for: \"{requestName}\"");
                 return new JsResponse<T>(false, default);
             }
 
@@ -596,7 +597,7 @@ namespace Y8API
             int callId = id;
 
             string json = ConvertListToJson(kvPairs);
-            Debug.Log($"JS call [{callId}] with JSON = {json}");
+            TryDebugLog($"JS call [{callId}] with JSON = {json}");
             Call(id, requestName, json);
 
             while (!callIdToResponse.ContainsKey(callId)) await Task.Yield();
@@ -645,7 +646,7 @@ namespace Y8API
         // call-back from JS when the system has completed init
         public void CallbackReady()
         {
-            Debug.Log("Y8 login system is ready.");
+            TryDebugLog("Y8 login system is ready.");
             isReady = true;
         }
 
@@ -653,7 +654,7 @@ namespace Y8API
         public void AuthCallbackResponse(string _response)
         {
             int authId = id;    // id could change in the callback, remember its current value
-            Debug.Log($"AuthResponse from JS: {_response} ");
+            TryDebugLog($"AuthResponse from JS: {_response} ");
             auth = JsonUtility.FromJson<Authorisation>(_response);
 
             callIdToResponse.Add(authId, new JsResponse<Authorisation>(IsLoggedIn(), auth));
@@ -671,7 +672,7 @@ namespace Y8API
             string request = _responseString.Substring(0, ob);
             int _id = int.Parse(_responseString.Substring(ob + 1, cb - ob - 1));
             string responseData = _responseString.Substring(cb + 2);
-            Debug.Log($"Response from JS: {request}[{_id}] = '{responseData}'");
+            TryDebugLog($"Response from JS: {request}[{_id}] = '{responseData}'");
 
             object response = responseData;      // default value to the response string
 
@@ -734,11 +735,20 @@ namespace Y8API
                     response = new JsResponse<SavedScreenshot>(savedScreenshot.success, savedScreenshot);
                     break;
                 default:
-                    Debug.Log($"Unhandled request type: {request}");
+                    TryDebugLog($"Unhandled request type: {request}");
                     break;
             }
 
             callIdToResponse.Add(_id, response);
+        }
+
+        private void TryDebugLog(object message)
+        {
+            if (showDebugMessages)
+            {
+                Debug.Log(message);
+            }
+          
         }
     }
 }

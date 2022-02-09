@@ -5481,6 +5481,11 @@ PrefabInstance:
       propertyPath: AppId
       value: 
       objectReference: {fileID: 0}
+    - target: {fileID: 4492952120848677862, guid: ae4a9e6116b95bd48a9fe899c2e4bba3,
+        type: 3}
+      propertyPath: showDebugMessages
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4492952120848677863, guid: ae4a9e6116b95bd48a9fe899c2e4bba3,
         type: 3}
       propertyPath: m_Name
