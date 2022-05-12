@@ -341,6 +341,25 @@ namespace Y8API
             return await TryCallAsync<SetData>("set_data", json);
         }
 
+        public async Task<JsResponse<SetData>> SaveDataAsync<T>(string key, T data) where T: class
+        {
+            string stringData = JsonUtility.ToJson(data).Replace("\"", "\'");
+            return await SetDataAsync(key, stringData);
+        }
+
+        public async Task<JsResponse<T>> LoadSaveDataAsync<T>(string key) where T: class
+        {
+            JsResponse<GetData> serializedResponse = await GetDataAsync(key);
+
+            T data = null;
+            if (serializedResponse.IsSuccess)
+            {
+                data = JsonUtility.FromJson<T>(serializedResponse.Data.jsondata.Replace("\'", "\""));               
+            }
+
+            return new JsResponse<T>(serializedResponse.IsSuccess, data);
+
+        }
         /// <summary>
         /// https://docs.y8.com/docs/javascript/online-saves/
         /// Retrieve the value saved using this key.
