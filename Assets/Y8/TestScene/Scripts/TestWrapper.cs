@@ -5,6 +5,12 @@ using Y8API;
 
 public class TestWrapper : MonoBehaviour
 {
+    public class SaveFileData {
+        public string stringValue;
+        public bool boolValue;
+        public float floatValue;
+    }
+
     public async void ButtonAutoLogin()
     {
         var response = await Y8.Instance.AutoLoginAsync();
@@ -90,10 +96,31 @@ public class TestWrapper : MonoBehaviour
         LogResponse(response);
     }
 
+    public async void ButtonSaveData()
+    {
+        var response = await Y8.Instance.SaveDataAsync(
+            "test_file_key",
+            new SaveFileData()
+            {
+                stringValue = "Test save",
+                boolValue = true,
+                floatValue = 0.01f
+
+            });
+        LogResponse(response);
+    }
+
     public async void ButtonGetData()
     {
         var response = await Y8.Instance.GetDataAsync("test_key");
         LogResponse(response);
+    }
+
+    public async void ButtonLoadSaveData()
+    {
+        var response = await Y8.Instance.LoadSaveDataAsync<SaveFileData>("test_file_key");
+        LogResponse(response);
+        Debug.Log($"Saved data: {response.Data.stringValue} | {response.Data.boolValue} | {response.Data.floatValue}");
     }
 
     public async void ButtonClearData()
