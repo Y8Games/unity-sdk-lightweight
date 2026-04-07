@@ -1,162 +1,281 @@
 ﻿using System.Collections;
 using System.Threading.Tasks;
+using TMPro;
 using UnityEngine;
 using Y8API;
 
 public class TestWrapper : MonoBehaviour
 {
-    public class SaveFileData {
+    public class SaveFileData
+    {
         public string stringValue;
         public bool boolValue;
         public float floatValue;
     }
 
-    public async void ButtonAutoLogin()
+    [SerializeField]
+    private TextMeshProUGUI debugText;
+
+    // ── Subscribe to the two game-lifecycle ad events ─────────────────────────
+
+    private void OnEnable()
     {
-        var response = await Y8.Instance.AutoLoginAsync();
+        Y8.Instance.OnAdPauseGame += HandleAdPause;
+        Y8.Instance.OnAdResumeGame += HandleAdResume;
+        Y8.Instance.OnAuthError += HandleAuthError;
+    }
+
+    private void OnDisable()
+    {
+        Y8.Instance.OnAdPauseGame -= HandleAdPause;
+        Y8.Instance.OnAdResumeGame -= HandleAdResume;
+        Y8.Instance.OnAuthError -= HandleAuthError;
+    }
+
+    private void HandleAdPause()
+    {
+        LogDebug("[TestWrapper] Ad started — pause game (e.g. Time.timeScale = 0)");
+    }
+
+    private void HandleAdResume()
+    {
+        LogDebug("[TestWrapper] Ad finished — resume game (e.g. Time.timeScale = 1)");
+    }
+
+    private void HandleAuthError(AuthError err)
+    {
+        LogDebug($"[TestWrapper] Auth error [{err.code}]: {err.message}");
+    }
+
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    public async void ButtonAutoLoginAsync()
+    {
+        JsResponse<Y8User> response = await Y8.Instance.AutoLoginAsync();
         LogResponse(response);
     }
 
-    public async void ButtonLogin()
+    public async void ButtonLoginAsync()
     {
-        var response = await Y8.Instance.LoginAsync();
+        JsResponse<Y8User> response = await Y8.Instance.LoginAsync();
         LogResponse(response);
     }
 
-    public async void ButtonRegister()
+    public async void ButtonLogoutAsync()
     {
-        var response = await Y8.Instance.RegisterAsync();
+        await Y8.Instance.LogoutAsync();
+        LogDebug($"[TestWrapper] session cleared");
+    }
+
+    // ── Ads ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Interstitial ad (game loaded, before play)
+    /// Pause/resume handled automatically via OnAdPauseGame / OnAdResumeGame.
+    /// </summary>
+    public async void ButtonShowAdStartAsync() => await ShowAdAsync(AdType.start);
+
+    /// <summary>
+    /// Interstitial ad (player paused)
+    /// Pause/resume handled automatically via OnAdPauseGame / OnAdResumeGame.
+    /// </summary>
+    public async void ButtonShowAdPauseAsync() => await ShowAdAsync(AdType.pause);
+
+    /// <summary>
+    /// Interstitial ad (between levels).
+    /// Pause/resume handled automatically via OnAdPauseGame / OnAdResumeGame.
+    /// </summary>
+    public async void ButtonShowAdNextAsync() => await ShowAdAsync(AdType.next);
+
+    /// <summary>
+    /// Interstitial ad (menu / options).
+    /// Pause/resume handled automatically via OnAdPauseGame / OnAdResumeGame.
+    /// </summary>
+    public async void ButtonShowAdBrowseAsync() => await ShowAdAsync(AdType.browse);
+
+    private async Task ShowAdAsync(AdType adType)
+    {
+        JsResponse<AdBreakInfo> result = await Y8.Instance.ShowAdAsync(adType);
+        LogDebug($"[TestWrapper] ShowAd done — status: {result.Data?.Status}");
+    }
+
+    /// <summary>
+    /// Rewarded ad. Check AdBreakInfo.Status for the outcome.
+    /// AdBreakStatus.Viewed = grant reward.
+    /// </summary>
+    public async void ButtonShowRewardedAd()
+    {
+        JsResponse<AdBreakInfo> result = await Y8.Instance.ShowAdAsync(
+            AdType.reward,
+            "test-reward"
+        );
+
+        if (!result.IsSuccess)
+        {
+            LogDebug("[TestWrapper] Rewarded ad skipped (no GameId)");
+            return;
+        }
+
+        switch (result.Data.Status)
+        {
+            case AdBreakStatus.Viewed:
+                LogDebug("[TestWrapper] Rewarded ad fully watched → grant reward");
+                break;
+            case AdBreakStatus.Dismissed:
+                LogDebug("[TestWrapper] Rewarded ad dismissed → no reward");
+                break;
+            case AdBreakStatus.NoFill:
+                LogDebug("[TestWrapper] No ad available right now → try later");
+                break;
+            case AdBreakStatus.Error:
+                LogDebug("[TestWrapper] Ad error → handle gracefully");
+                break;
+        }
+    }
+
+    // ── Achievements ──────────────────────────────────────────────────────────
+
+    public async void ButtonShowAchievementsAsync()
+    {
+        await Y8.Instance.ShowAchievementsAsync();
+        LogDebug("[TestWrapper] Achievements closed");
+    }
+
+    public async void ButtonGetAchievementsAsync()
+    {
+        JsResponse<AchievementsData> response = await Y8.Instance.GetAchievements();
         LogResponse(response);
     }
 
-    public async void ButtonShowAd()
+    public async void ButtonAwardAchievementAsync()
     {
-        await Y8.Instance.ShowAdAsync();
-        Debug.Log("Ad finished");
-    }
+        JsResponse<AchievementsData> achievementsData = await Y8.Instance.GetAchievements();
+        Achievement[] achievements = achievementsData.Data.achievements;
+        if (achievements == null || achievements.Length == 0)
+        {
+            LogDebug("No achievements available");
+            return;
+        }
 
-    public async void ButtonAchievementList()
-    {
-        await Y8.Instance.ShowAchievementListAsync();
-        Debug.Log("Achievement list finished");
-    }
-
-    public async void ButtonGetAchievements()
-    {
-        var response = await Y8.Instance.GetAchievements();
+        int randomIndex = UnityEngine.Random.Range(0, achievements.Length);
+        Achievement randomAchievement = achievements[randomIndex];
+        JsResponse<AchievementSave> response = await Y8.Instance.AwardAchievementAsync(
+            randomAchievement.achievement,
+            randomAchievement.achievementkey,
+            false,
+            false
+        );
         LogResponse(response);
     }
 
-    public async void ButtonAchievementSave()
+    // ── Leaderboards ──────────────────────────────────────────────────────────
+
+    public async void ButtonGetLeaderboardsAsync()
     {
-        var response = await Y8.Instance.SaveAchievementAsync("TestAchievement", "67ca8e11e839cd902960", false, false);
+        JsResponse<ScoreTables> response = await Y8.Instance.GetLeaderboardsAsync();
         LogResponse(response);
     }
 
-    public async void ButtonTables()
+    public async void ButtonGetLeaderboardScoresAsync()
     {
-        var response = await Y8.Instance.GetTableNamesAsync();
+        JsResponse<ScoreTable> response = await Y8.Instance.GetLeaderboardScoresAsync(
+            "test table",
+            "alltime",
+            20,
+            1,
+            true
+        );
         LogResponse(response);
     }
 
-    public async void ButtonCustomScore()
+    public async void ButtonShowLeaderboardAsync()
     {
-        var response = await Y8.Instance.GetCustomScoreAsync("test table", "alltime", 20, 1, true);
+        await Y8.Instance.ShowLeaderboardAsync("level_1", "alltime", true, false);
+        LogDebug("[TestWrapper] Leaderboard closed");
+    }
+
+    public async void ButtonSaveLeaderboardScoreAsync()
+    {
+        int exampleScore = 3001 + UnityEngine.Random.Range(0, 1000);
+        JsResponse<ScoreSave> response = await Y8.Instance.SaveLeaderboardScoreAsync(
+            "level_1",
+            exampleScore,
+            false,
+            true
+        );
         LogResponse(response);
     }
 
-    public async void ButtonScoreList()
-    {
-        await Y8.Instance.ShowScoreListAsync("test table", "alltime", true, false);
-        Debug.Log("Score list finished");
-    }
+    // ── Online Saves ──────────────────────────────────────────────────────────
 
-    public async void ButtonScoreSave()
+    public async void ButtonSaveDataKeyAsync()
     {
-        int exampleScore = 3001 + Random.Range(0, 1000);
-        var response = await Y8.Instance.SaveScoreAsync("test table", exampleScore, false, true);
+        JsResponse<SetData> response = await Y8.Instance.SaveDataAsync("test_key", "monkey");
         LogResponse(response);
     }
 
-    public async void ButtonAppRequest()
+    public async void ButtonSaveDataClassAsync()
     {
-        await Y8.Instance.AppRequestAsync("Play with me!", "https://y8.com", "");
-        Debug.Log("App request finished");
-    }
-
-    public async void ButtonFriendRequest()
-    {
-        await Y8.Instance.FriendRequestAsync("574da07ee694aa5032001626", "http://id.net/");
-        Debug.Log("Friend request finished");
-    }
-
-    public async void ButtonSetData()
-    {
-        var response = await Y8.Instance.SetDataAsync("test_key", "monkey");
-        LogResponse(response);
-    }
-
-    public async void ButtonSaveData()
-    {
-        var response = await Y8.Instance.SaveDataAsync(
+        JsResponse<SetData> response = await Y8.Instance.SaveDataAsync(
             "test_file_key",
-            new SaveFileData()
+            new SaveFileData
             {
                 stringValue = "Test save",
                 boolValue = true,
                 floatValue = 0.01f
-
-            });
+            }
+        );
         LogResponse(response);
     }
 
-    public async void ButtonGetData()
+    public async void ButtonLoadDataKeyAsync()
     {
-        var response = await Y8.Instance.GetDataAsync("test_key");
+        JsResponse<GetData> response = await Y8.Instance.LoadDataAsync("test_key");
         LogResponse(response);
     }
 
-    public async void ButtonLoadSaveData()
+    public async void ButtonLoadDataClassAsync()
     {
-        var response = await Y8.Instance.LoadSaveDataAsync<SaveFileData>("test_file_key");
+        JsResponse<SaveFileData> response = await Y8.Instance.LoadDataAsync<SaveFileData>(
+            "test_file_key"
+        );
         LogResponse(response);
-        Debug.Log($"Saved data: {response.Data.stringValue} | {response.Data.boolValue} | {response.Data.floatValue}");
+
+        if (response.IsSuccess && response.Data != null)
+        {
+            LogDebug(
+                $"[TestWrapper] Loaded data: {response.Data.stringValue} | "
+                    + $"{response.Data.boolValue} | {response.Data.floatValue}"
+            );
+        }
     }
 
-    public async void ButtonClearData()
+    public async void ButtonRemoveDataAsync()
     {
-        var response = await Y8.Instance.ClearDataAsync("test_key");
+        JsResponse<SetData> response = await Y8.Instance.RemoveDataAsync("test_file_key");
+        //<SetData> response = await Y8.Instance.RemoveDataAsync("test_key");
         LogResponse(response);
     }
 
-    public async void ButtonIsSponsor()
-    {
-        var response = await Y8.Instance.IsSponsorAsync();
-        Debug.Log($"Is Success: {response.IsSuccess}, Is Sponsor: {response.Data}");
-    }
+    // ── App Image ─────────────────────────────────────────────────────────────
 
-    public async void ButtonIsBlacklisted()
+    public async void ButtonSubmitImageAsync()
     {
-        var response = await Y8.Instance.IsBlacklistedAsync();
-        Debug.Log($"Is Success: {response.IsSuccess}, Is Blacklisted: {response.Data}");
-    }
-
-    public async void TakeScreenshot()
-    {
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
         Texture2D screenshotTexture = null;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
         StartCoroutine(TakeScreenshotCoroutine());
 
-        while (screenshotTexture == null) await Task.Yield();
-        var response = await Y8.Instance.SaveScreenshotAsync(screenshotTexture);
-
-        if (response.IsSuccess)
+        while (screenshotTexture == null)
         {
-            Debug.Log($"Screenshot saved to {response.Data.image}");
+            await Task.Yield();
         }
 
-        // WebGL clears every frame, needs to be triggered at EndOfFrame. Local method is used to keep the async/await
+        JsResponse<SavedScreenshot> response = await Y8.Instance.SubmitImageAsync(
+            screenshotTexture
+        );
+        if (response.IsSuccess)
+        {
+            LogDebug($"[TestWrapper] Image saved: {response.Data.imageUrl}");
+        }
+
         IEnumerator TakeScreenshotCoroutine()
         {
             yield return new WaitForEndOfFrame();
@@ -164,23 +283,53 @@ public class TestWrapper : MonoBehaviour
         }
     }
 
-    public void ButtonGetInstantValues()
+    public void ButtonGetUserValues()
     {
-        string debug =
-            "logged in=" + Y8.Instance.IsLoggedIn().ToString() +
-            " nickname=" + Y8.Instance.Nickname() +
-            " first name=" + Y8.Instance.FirstName() +
-            " token=" + Y8.Instance.SessionToken() +
-            " pid=" + Y8.Instance.PID() +
-            " date of birth=" + Y8.Instance.DateOfBirth() +
-            " gender=" + Y8.Instance.Gender() +
-            " language=" + Y8.Instance.Language() +
-            " locale=" + Y8.Instance.Locale();
-        Debug.Log(debug);
+        LogDebug(
+            "logged in="
+                + Y8.Instance.IsLoggedIn()
+                + " nickname="
+                + Y8.Instance.Nickname()
+                + " first name="
+                + Y8.Instance.FirstName()
+                + " token="
+                + Y8.Instance.SessionToken()
+                + " pid="
+                + Y8.Instance.PID()
+                + " date of birth="
+                + Y8.Instance.DateOfBirth()
+                + " gender="
+                + Y8.Instance.Gender()
+                + " language="
+                + Y8.Instance.Language()
+                + " locale="
+                + Y8.Instance.Locale()
+        );
     }
 
-    private void LogResponse<T>(JsResponse<T> response)
+    public async void ButtonIsBlacklistedAsync()
     {
-        Debug.Log($"Is Success: {response.IsSuccess}, Data: {JsonUtility.ToJson(response.Data)}");
+        JsResponse<bool> response = await Y8.Instance.IsBlacklistedAsync();
+        LogDebug($"Is Success: {response.IsSuccess}, Is Blacklisted: {response.Data}");
+    }
+
+    public async void ButtonGetPlatformLocaleAsync()
+    {
+        JsResponse<PlatformLocale> response = await Y8.Instance.GetPlatformLocaleAsync();
+        LogDebug($"Is Success: {response.IsSuccess}, Platform Locale: {response.Data?.locale}");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void LogResponse<T>(JsResponse<T> response) =>
+        LogDebug(
+            $"[TestWrapper] IsSuccess={response.IsSuccess} "
+                + $"Data={JsonUtility.ToJson(response.Data)}"
+        );
+
+    private void LogDebug(string info)
+    {
+        Debug.Log(info);
+        debugText.text = info;
     }
 }

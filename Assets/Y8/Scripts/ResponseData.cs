@@ -2,48 +2,20 @@
 
 namespace Y8API
 {
-    [Serializable]
-    public class Authorisation
-    {
-        public AuthResponse authResponse = null;
-        public string status = "";
-    }
+    // ─── Auth ─────────────────────────────────────────────────────────────────
 
     [Serializable]
-    public class AuthResponse
+    public class Y8User
     {
-        public string state = null;
-        public string access_token = null;
-        public string token_type = null;
-        public int expires_in = 0;
-        public string score = null;
-        public string redirect_uri = null;
-        public Details details = null;
-    }
-
-    [Serializable]
-    public class Details
-    {
-        public int level = 0;
-        public TrustDetails trust_details = null;
-        public string first_name = null;
-        public string dob = null;
-        public string language = null;
-        public string gender = null;
-        public string nickname = null;
         public string pid = null;
+        public string nickname = null;
+        public string first_name = null;
+        public string gender = null;
+        public string language = null;
         public string locale = null;
+        public string dob = null;
+        public string access_token = null;
         public Avatars avatars = null;
-        public string version = null;
-        public Risk risk = null;
-    }
-
-    [Serializable]
-    public class TrustDetails
-    {
-        public string email = null;
-        public bool mobile = false;
-        public bool certification = false;
     }
 
     [Serializable]
@@ -58,125 +30,201 @@ namespace Y8API
     }
 
     [Serializable]
-    public class Risk
+    public class AuthError
     {
-        public RiskElement registration = null;
-        public RiskElement login = null;
+        public string message = "";
+        public int code = 0;
     }
 
-    [Serializable]
-    public class RiskElement
+    // ─── Ads ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Ad break type passed to showAd().
+    /// Matches the new SDK's type strings exactly via .ToString().
+    /// </summary>
+    public enum AdType
     {
-        public string risk = null;
-        public string real_ip = null;
-        public string request_ip = null;
+        /// <summary>Game loaded, before play starts. Most common slot.</summary>
+        start,
+
+        /// <summary>Player paused the game manually.</summary>
+        pause,
+
+        /// <summary>Between levels or rounds.</summary>
+        next,
+
+        /// <summary>Player browsing menus or options.</summary>
+        browse,
+
+        /// <summary>Rewarded ad — player opts in for a reward.</summary>
+        reward
     }
+
+    /// <summary>
+    /// What happened at the end of an ad break.
+    /// Populated from adBreakDone info.breakStatus.
+    /// </summary>
+    public enum AdBreakStatus
+    {
+        /// <summary>Ad played to completion. For rewarded ads: grant the reward.</summary>
+        Viewed,
+
+        /// <summary>Player closed the rewarded ad before it finished. Do NOT grant reward.</summary>
+        Dismissed,
+
+        /// <summary>
+        /// No ad was available (frequencyCapped / noAdPreloaded / other).
+        /// Tell the player to try again later.
+        /// </summary>
+        NoFill,
+
+        /// <summary>SDK error or Promise rejection during showAd().</summary>
+        Error
+    }
+
+    /// <summary>
+    /// Returned by ShowAdAsync() and ShowRewardedAdAsync().
+    /// Contains the full adBreakDone payload plus a typed Status enum.
+    /// </summary>
+    [Serializable]
+    public class AdBreakInfo
+    {
+        // ── Raw fields from adBreakDone info object ────────────────────────
+        public string breakType = "";
+        public string breakFormat = "";
+        public string breakStatus = "";
+        public string breakName = "";
+
+        // ── Typed status — set by C# after deserialisation ─────────────────
+        /// <summary>
+        /// Typed result of the ad break. Use this instead of comparing breakStatus strings.
+        /// </summary>
+        public AdBreakStatus Status = AdBreakStatus.Error;
+
+        /// <summary>Convenience: true only when a rewarded ad was fully watched.</summary>
+        public bool WasViewed => Status == AdBreakStatus.Viewed;
+
+        /// <summary>
+        /// Parses the raw breakStatus string from the SDK into the typed Status enum.
+        /// Called once after JsonUtility.FromJson().
+        /// </summary>
+        public void ResolveStatus()
+        {
+            Status = breakStatus switch
+            {
+                "viewed" => AdBreakStatus.Viewed,
+                "dismissed" => AdBreakStatus.Dismissed,
+                "frequencyCapped" or "noAdPreloaded" or "other" => AdBreakStatus.NoFill,
+                _ => AdBreakStatus.Error,
+            };
+        }
+    }
+
+    // ─── Achievements ─────────────────────────────────────────────────────────
 
     [Serializable]
     public class AchievementSave
     {
-        public string name = "";
-        public bool unlocked = false;
-        public int errorcode = 0;
         public bool success = false;
         public string errormessage = "";
-    };
+    }
 
     [Serializable]
     public class AchievementsData
     {
-        public int errorcode = 0;
-        public bool success = false;
         public Achievement[] achievements;
     }
 
     [Serializable]
     public class Achievement
     {
-        public string difficulty;
+        public string achievementid = null;
+        public string achievement = null;
+        public string description = null;
+        public string achievementkey = null;
+        public string icon = null;
+        public string difficulty = null;
         public bool secret = false;
-        public string achievement;
-        public string icon;
-        public string achievementkey;
-        public string description;
-        public int awarded;
-        public PlayerAchievement player;
+        public int awarded = 0;
+        public string game = null;
+        public string link = null;
+        public PlayerAchievement player = null;
     }
 
     [Serializable]
     public class PlayerAchievement
     {
-        public int date;
-        public string rdate;
-        public string playername;
-        public string playerid;
+        public int date = 0;
+        public string rdate = null;
+        public string playername = null;
+        public string playerid = null;
     }
 
-    [Serializable]
-    public class ScoreSave
-    {
-        public int errorcode = 0;
-        public bool success = false;
-        public string errormessage = "";
-    };
-
-    [Serializable]
-    public class SetData
-    {
-        public string status = "";
-        public string key = "";
-    };
-
-    [Serializable]
-    public class GetData
-    {
-        public string error = "";
-        public string key = "";
-        public string jsondata = "";
-    };
-
-    [Serializable]
-    public class ScoreTable
-    {
-        public Score[] scores;
-        public int numscores;
-        public string mode;
-        public int errorcode;
-        public bool success;
-    };
-
-    [Serializable]
-    public class Score
-    {
-        public string table;
-        public string playerid;
-        public string playername;
-        public string appid;
-        public string tableid;
-        public int points;
-        public object fields;
-        public int lastupdated;
-        public int date;
-        public int rank;
-        public string scoreid;
-        public string rdate;
-    };
+    // ─── Leaderboards ─────────────────────────────────────────────────────────
 
     [Serializable]
     public class ScoreTables
     {
         public string[] tables;
-        public int errorcode;
-        public bool success;
-    };
+    }
+
+    [Serializable]
+    public class ScoreTable
+    {
+        public Score[] items;
+        public int page = 1;
+        public int perPage = 10;
+        public int totalPages = 1;
+    }
+
+    [Serializable]
+    public class Score
+    {
+        public string table = null;
+        public string playerid = null;
+        public string playername = null;
+        public int points = 0;
+        public int rank = 0;
+        public int date = 0;
+        public string rdate = null;
+        public string scoreid = null;
+    }
+
+    [Serializable]
+    public class ScoreSave
+    {
+        public bool success = false;
+        public string errormessage = "";
+    }
+
+    // ─── Online Saves ──────────────────────────────────────────────────────────
+
+    [Serializable]
+    public class SetData
+    {
+        public bool success = false;
+        public string key = "";
+    }
+
+    [Serializable]
+    public class GetData
+    {
+        public string key = "";
+        public string value = "";
+        public string error = "";
+    }
+
+    // ─── App Image ────────────────────────────────────────────────────────────
 
     [Serializable]
     public class SavedScreenshot
     {
-        public bool success;
-        public string message;
-        public string image;
+        public bool success = false;
+        public string imageUrl = "";
+        public string message = "";
     }
+
+    // ─── Shared ───────────────────────────────────────────────────────────────
 
     [Serializable]
     public class JsResponse<T>
@@ -191,7 +239,17 @@ namespace Y8API
         }
     }
 
-    public class Empty
+    public class Empty { }
+
+    /// <summary>
+    /// Returned by GetPlatformLocaleAsync().
+    /// locale is a two-letter code e.g. "en", "fr", "de", "ja".
+    /// Returns "en" for unrecognised subdomains (including www).
+    /// Does not require login.
+    /// </summary>
+    [Serializable]
+    public class PlatformLocale
     {
+        public string locale = "en";
     }
 }
