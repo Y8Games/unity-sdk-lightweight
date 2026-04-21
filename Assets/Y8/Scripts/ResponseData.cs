@@ -15,6 +15,7 @@ namespace Y8API
         public string locale = null;
         public string dob = null;
         public string access_token = null;
+        public int level = 0;
         public Avatars avatars = null;
     }
 
@@ -34,6 +35,28 @@ namespace Y8API
     {
         public string message = "";
         public int code = 0;
+    }
+
+    /// <summary>
+    /// Token returned by y8Sdk.getToken().
+    /// null when not logged in.
+    /// Most SDK methods handle tokens internally — you rarely need this directly.
+    /// </summary>
+    [Serializable]
+    public class Y8Token
+    {
+        public string access_token = null;
+        public string refresh_token = null;
+
+        /// <summary>Always "bearer".</summary>
+        public string token_type = null;
+        public string scope = null;
+
+        /// <summary>Lifetime in seconds (e.g. 31 536 000 = 1 year).</summary>
+        public int expires_in = 0;
+
+        /// <summary>Unix timestamp of when the token was created.</summary>
+        public int created_at = 0;
     }
 
     // ─── Ads ──────────────────────────────────────────────────────────────────

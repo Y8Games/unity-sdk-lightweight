@@ -66,6 +66,108 @@ public class TestWrapper : MonoBehaviour
         LogDebug($"[TestWrapper] session cleared");
     }
 
+    public async void ButtonGetUserAsync()
+    {
+        JsResponse<Y8User> response = await Y8.Instance.GetUserAsync();
+        if (response.IsSuccess)
+        {
+            LogDebug(
+                $"[TestWrapper] GetUser — pid={response.Data.pid} "
+                    + $"nickname={response.Data.nickname} "
+                    + $"level={response.Data.level}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] GetUser — no active session");
+        }
+    }
+
+    public void ButtonGetUserSync()
+    {
+        Y8User user = Y8.Instance.GetUser();
+        if (user != null)
+        {
+            LogDebug(
+                $"[TestWrapper] GetUser (sync) — pid={user.pid} "
+                    + $"nickname={user.nickname} "
+                    + $"level={user.level}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] GetUser (sync) — not logged in");
+        }
+    }
+
+    public async void ButtonReloadUserAsync()
+    {
+        JsResponse<Y8User> response = await Y8.Instance.ReloadUserAsync();
+        if (response.IsSuccess)
+        {
+            LogDebug(
+                $"[TestWrapper] ReloadUser — pid={response.Data.pid} "
+                    + $"nickname={response.Data.nickname} "
+                    + $"level={response.Data.level}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] ReloadUser — no active session");
+        }
+    }
+
+    public async void ButtonGetTokenAsync()
+    {
+        JsResponse<Y8Token> response = await Y8.Instance.GetTokenAsync();
+        if (response.IsSuccess)
+        {
+            LogDebug(
+                $"[TestWrapper] GetToken — type={response.Data.token_type} "
+                    + $"expires_in={response.Data.expires_in} "
+                    + $"scope={response.Data.scope}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] GetToken — not logged in / no token");
+        }
+    }
+
+    public void ButtonGetTokenSync()
+    {
+        Y8Token token = Y8.Instance.GetToken();
+        if (token != null)
+        {
+            LogDebug(
+                $"[TestWrapper] GetToken (sync) — type={token.token_type} "
+                    + $"expires_in={token.expires_in} "
+                    + $"scope={token.scope}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] GetToken (sync) — not logged in / no token");
+        }
+    }
+
+    public async void ButtonRefreshTokenAsync()
+    {
+        JsResponse<Y8Token> response = await Y8.Instance.RefreshTokenAsync();
+        if (response.IsSuccess)
+        {
+            LogDebug(
+                $"[TestWrapper] RefreshToken — type={response.Data.token_type} "
+                    + $"expires_in={response.Data.expires_in} "
+                    + $"scope={response.Data.scope}"
+            );
+        }
+        else
+        {
+            LogDebug("[TestWrapper] RefreshToken — failed (not logged in or token expired)");
+        }
+    }
+
     // ── Ads ───────────────────────────────────────────────────────────────────
 
     /// <summary>

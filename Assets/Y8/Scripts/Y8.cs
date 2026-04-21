@@ -88,6 +88,7 @@ namespace Y8API
         private readonly string calleeName = "Y8_Root";
         private readonly Dictionary<int, object> callIdToResponse = new();
         private Y8User currentUser;
+        private Y8Token currentToken;
 
         // ── Unity lifecycle ───────────────────────────────────────────────────
 
@@ -184,8 +185,81 @@ namespace Y8API
         public async Task LogoutAsync()
         {
             currentUser = null;
+            currentToken = null;
             await TryCallAsync<Empty>("logout", null);
         }
+
+        /// <summary>
+        /// Asks JS for the user the SDK currently holds synchronously via
+        /// sdk.getUser(). Useful when you want to refresh the cached user
+        /// without triggering a login popup.
+        ///
+        /// Returns IsSuccess=true + the user when a session exists, or
+        /// IsSuccess=false + null when no session is active.
+        /// </summary>
+        public async Task<JsResponse<Y8User>> GetUserAsync() =>
+            await TryCallAsync<Y8User>("getUser", null);
+
+        /// <summary>
+        /// Returns the cached user object without any JS round-trip.
+        /// This is the C# equivalent of the synchronous y8Sdk.getUser() call.
+        /// Returns null when no session is active.
+        /// The value is kept up-to-date by LoginAsync / AutoLoginAsync /
+        /// GetUserAsync and cleared by LogoutAsync.
+        /// </summary>
+        public Y8User GetUser() => currentUser;
+
+        /// <summary>
+        /// Fetches the latest user data from the server, updates the local cache,
+        /// and re-triggers the onAuth callback with the fresh user.
+        ///
+        /// Mirrors: y8Sdk.reloadUser().then(user => { ... })
+        ///
+        /// Returns IsSuccess=true + the refreshed Y8User when a session exists.
+        /// Returns IsSuccess=false + null when no session is active or on error.
+        ///
+        /// Note: onAuth will ALSO fire during this call (updating currentUser a
+        /// second time via AuthCallbackResponse). Both paths produce the same data
+        /// so this is safe — the awaited return value is always from the direct
+        /// reloadUser response.
+        /// </summary>
+        public async Task<JsResponse<Y8User>> ReloadUserAsync() =>
+            await TryCallAsync<Y8User>("reloadUser", null);
+
+        /// <summary>
+        /// Asks JS for the token the SDK currently holds synchronously via
+        /// sdk.getToken(). Refreshes the cached token without triggering a
+        /// login popup.
+        ///
+        /// Returns IsSuccess=true + the token when a session exists, or
+        /// IsSuccess=false + null when not logged in.
+        /// </summary>
+        public async Task<JsResponse<Y8Token>> GetTokenAsync() =>
+            await TryCallAsync<Y8Token>("getToken", null);
+
+        /// <summary>
+        /// Returns the cached token object without any JS round-trip.
+        /// This is the C# equivalent of the synchronous y8Sdk.getToken() call.
+        /// Returns null when not logged in.
+        /// Kept up-to-date by GetTokenAsync() and cleared by LogoutAsync().
+        /// </summary>
+        public Y8Token GetToken() => currentToken;
+
+        /// <summary>
+        /// Exchanges the current refresh token for a new access token and updates
+        /// the local token cache.
+        ///
+        /// Mirrors: y8Sdk.refreshToken().then(token => { ... })
+        ///
+        /// Returns IsSuccess=true + the new Y8Token on success.
+        /// Returns IsSuccess=false + null if not logged in, the refresh token has
+        /// expired, or the server returns an error.
+        ///
+        /// Note: Unlike ReloadUserAsync(), this does NOT trigger onAuth — only the
+        /// token is updated. currentUser is left unchanged.
+        /// </summary>
+        public async Task<JsResponse<Y8Token>> RefreshTokenAsync() =>
+            await TryCallAsync<Y8Token>("refreshToken", null);
 
         // ── Ads ───────────────────────────────────────────────────────────────
 
@@ -763,6 +837,66 @@ namespace Y8API
                     response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
                     break;
                 }
+                case "reloadUser":
+                {
+                    AuthPayload p = JsonUtility.FromJson<AuthPayload>(data);
+                    bool ok = p?.user != null && !string.IsNullOrEmpty(p.user.pid);
+                    if (ok)
+                    {
+                        currentUser = p.user;
+                    }
+                    else
+                    {
+                        currentUser = null;
+                    }
+
+                    response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
+                    break;
+                }
+                case "getUser":
+                {
+                    GetUserPayload p = JsonUtility.FromJson<GetUserPayload>(data);
+                    bool ok = p?.user != null && !string.IsNullOrEmpty(p.user.pid);
+                    if (ok)
+                    {
+                        currentUser = p.user;
+                    }
+
+                    response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
+                    break;
+                }
+                case "getToken":
+                {
+                    TokenPayload p = JsonUtility.FromJson<TokenPayload>(data);
+                    bool ok = p?.token != null && !string.IsNullOrEmpty(p.token.access_token);
+                    if (ok)
+                    {
+                        currentToken = p.token;
+                    }
+                    else
+                    {
+                        currentToken = null;
+                    }
+
+                    response = new JsResponse<Y8Token>(ok, currentToken);
+                    break;
+                }
+                case "refreshToken":
+                {
+                    TokenPayload p = JsonUtility.FromJson<TokenPayload>(data);
+                    bool ok = p?.token != null && !string.IsNullOrEmpty(p.token.access_token);
+                    if (ok)
+                    {
+                        currentToken = p.token;
+                    }
+                    else
+                    {
+                        currentToken = null;
+                    }
+
+                    response = new JsResponse<Y8Token>(ok, currentToken);
+                    break;
+                }
                 case "submitImage":
                 {
                     SavedScreenshot d = JsonUtility.FromJson<SavedScreenshot>(data);
@@ -813,6 +947,18 @@ namespace Y8API
         {
             public string status = "";
             public Y8User user = null;
+        }
+
+        [Serializable]
+        private class GetUserPayload
+        {
+            public Y8User user = null;
+        }
+
+        [Serializable]
+        private class TokenPayload
+        {
+            public Y8Token token = null;
         }
     }
 }

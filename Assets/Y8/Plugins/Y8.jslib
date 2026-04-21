@@ -124,6 +124,46 @@
                         : { status: 'not_connected' });
                     break;
 
+                case 'getToken':
+                    {
+                        var token = sdk.getToken ? sdk.getToken() : null;
+                        respond({ token: token || null });
+                        break;
+                    }
+
+                case 'refreshToken':
+                    sdk.refreshToken()
+                        .then(function (token) {
+                            respond({ token: token || null });
+                        })
+                        .catch(function (e) {
+                            console.error('[Y8] refreshToken error:', e);
+                            respond({ token: null });
+                        });
+                    break;
+
+                case 'getUser':
+                    {
+                        var user = sdk.getUser ? sdk.getUser() : null;
+                        respond(user ? { user: user } : { user: null });
+                        break;
+                    }
+
+                case 'reloadUser':
+                    sdk.reloadUser()
+                        .then(function (user) {
+                            // onAuth will also fire, but we respond here so TryCallAsync
+                            // resolves with the fresh user directly on the awaiting call.
+                            respond(user
+                                ? { status: 'connected', user: user }
+                                : { status: 'not_connected' });
+                        })
+                        .catch(function (e) {
+                            console.error('[Y8] reloadUser error:', e);
+                            respond({ status: 'not_connected' });
+                        });
+                    break;
+
                 // ── Ads ───────────────────────────────────────────────────────
                 //
                 // showAd handles ALL ad types (start/pause/next/browse/reward).
