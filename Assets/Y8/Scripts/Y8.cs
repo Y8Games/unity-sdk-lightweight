@@ -1,33 +1,96 @@
-﻿#if !UNITY_EDITOR
-using System.Runtime.InteropServices;
-#endif
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
 using UnityEngine;
+#if !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
 
 namespace Y8API
 {
+    // ── Inspector-constrained option enums ────────────────────────────────────
+
+    /// <summary>'on' = preload immediately. 'auto' = SDK decides.</summary>
+    public enum PreloadAdBreaks
+    {
+        on,
+        auto
+    }
+
+    /// <summary>'on' = ads may play audio. 'off' = muted.</summary>
+    public enum AdSound
+    {
+        on,
+        off
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     public class Y8 : MonoBehaviour
     {
         public static Y8 Instance { get; private set; }
 
         private static bool isReady = false;
 
-        [Header("ENTER APP ID HERE")] public string AppId = "";
-        [Header("ENTER ADS ID HERE (optional)")] public string AdsId = "";
-        [SerializeField] public bool showDebugMessages;
+        // ── Inspector fields ──────────────────────────────────────────────────
+
+        [Header("ENTER APP ID HERE")]
+        public string AppId = "";
+
+        [Header("ENTER GAME ID FOR ADS HERE (optional)")]
+        public string GameId = "";
+
+        [Header("SDK Init Options")]
+        [Tooltip("true = SDK silently checks for an existing session on startup.")]
+        public bool AutoLogin = true;
+
+        [Tooltip("'on' = preload ad creative immediately.\n'auto' = SDK decides.")]
+        public PreloadAdBreaks PreloadAdBreaks = PreloadAdBreaks.on;
+
+        [Tooltip("'on' = ads may play audio.\n'off' = ads are muted.")]
+        public AdSound Sound = AdSound.on;
+
+        [SerializeField]
+        private bool showDebugMessages;
+
+        // ── Ad events ─────────────────────────────────────────────────────────
+        //
+        // Only two events exist. Everything else (viewed / dismissed / noFill)
+        // is returned via the AdBreakInfo.Status enum on the Task return value.
+        //
+        // Usage:
+        //   Y8.Instance.OnAdPauseGame  += () => Time.timeScale = 0f;
+        //   Y8.Instance.OnAdResumeGame += () => Time.timeScale = 1f;
+
+        /// <summary>
+        /// Fired by JS beforeAd. Pause your game audio and logic here.
+        /// </summary>
+        public event Action OnAdPauseGame;
+
+        /// <summary>
+        /// Fired by JS resumeOnce (via afterAd or adBreakDone fallback).
+        /// Resume your game audio and logic here.
+        /// </summary>
+        public event Action OnAdResumeGame;
+
+        // ── Auth error event ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fired when onAuth receives an error (popup blocked, iframe fail, etc.).
+        /// LoginAsync / AutoLoginAsync will also return IsSuccess=false.
+        /// </summary>
+        public event Action<AuthError> OnAuthError;
+
+        // ── Internal state ────────────────────────────────────────────────────
 
         private int id = 10000;
-
-        // Jslib invokes methods on object with specific name > we need to enforce it
         private readonly string calleeName = "Y8_Root";
+        private readonly Dictionary<int, object> callIdToResponse = new();
+        private Y8User currentUser;
+        private Y8Token currentToken;
 
-        private readonly Dictionary<int, object> callIdToResponse = new Dictionary<int, object>();
-
-        private Authorisation auth;
+        // ── Unity lifecycle ───────────────────────────────────────────────────
 
         private void Awake()
         {
@@ -39,9 +102,15 @@ namespace Y8API
                 transform.SetParent(null);
 
                 AppId = AppId.Trim();
-                AdsId = AdsId.Trim();
+                GameId = GameId.Trim();
 
-                Init(AppId, AdsId);
+                Init(
+                    AppId,
+                    GameId,
+                    PreloadAdBreaks.ToString(),
+                    AutoLogin ? 1 : 0,
+                    Sound.ToString()
+                );
 
                 DontDestroyOnLoad(Instance.gameObject);
             }
@@ -51,9 +120,16 @@ namespace Y8API
             }
         }
 
-#if UNITY_EDITOR || !UNITY_WEBGL
+        // ── JS bindings / Editor stubs ────────────────────────────────────────
 
-        private static void Init(string appId, string adsId)
+#if UNITY_EDITOR || !UNITY_WEBGL
+        private static void Init(
+            string appId,
+            string gameId,
+            string preloadAdBreaks,
+            int autoLogin,
+            string sound
+        )
         {
 #if !UNITY_WEBGL
             Debug.LogWarning($"Y8 API calls do not work for {Application.platform}!");
@@ -61,333 +137,382 @@ namespace Y8API
 #endif
             if (string.IsNullOrEmpty(appId))
             {
-                Debug.LogError("AppId is not filled, on Y8Root! Get yours here: https://account.y8.com/applications");
+                Debug.LogError(
+                    "AppId is not set on Y8Root! Get yours: https://account.y8.com/applications"
+                );
             }
 
-            Debug.Log($"Y8.Init: {appId}, ads: {adsId}");
+            Debug.Log(
+                $"[Y8] Init (editor stub) appId={appId} gameId={gameId} "
+                    + $"preload={preloadAdBreaks} autoLogin={autoLogin} sound={sound}"
+            );
             isReady = true;
         }
 
-        private static void Call(
-        int _id,
-        string _request,
-        string _jsonData)
-        {
-            Debug.Log($"{_id} '{_request}' with data: {_jsonData}");
-        }
-
+        private static void Call(int _id, string _request, string _jsonData) =>
+            Debug.Log($"[Y8 editor stub] [{_id}] '{_request}' data={_jsonData}");
 #else
-        // bindings for JS functions in Y8.jslib
         [DllImport("__Internal")]
-        private static extern void Init(string _AppId, string _AdsId);
+        private static extern void Init(
+            string _appId,
+            string _gameId,
+            string _preloadAdBreaks,
+            int _autoLogin,
+            string _sound
+        );
+
         [DllImport("__Internal")]
         private static extern void Call(int _id, string _request, string _jsonData);
 #endif
 
+        // ── Auth ──────────────────────────────────────────────────────────────
+
         /// <summary>
-        /// https://docs.y8.com/docs/javascript/auth-functions/
+        /// Checks login status. autoLogin during Init handles silent auth;
+        /// call this to get the current user state.
         /// </summary>
-        public async Task<JsResponse<Authorisation>> AutoLoginAsync()
+        public async Task<JsResponse<Y8User>> AutoLoginAsync() =>
+            await TryCallAsync<Y8User>("autoLogin", null);
+
+        /// <summary>
+        /// Opens the Y8 login popup / silent iframe auth.
+        /// Returns IsSuccess=false if popup is blocked or iframe fails.
+        /// </summary>
+        public async Task<JsResponse<Y8User>> LoginAsync() =>
+            await TryCallAsync<Y8User>("login", null);
+
+        /// <summary>Logs out and clears local user state.</summary>
+        public async Task LogoutAsync()
         {
-            return await TryCallAsync<Authorisation>("auto_login", null);
+            currentUser = null;
+            currentToken = null;
+            await TryCallAsync<Empty>("logout", null);
         }
 
         /// <summary>
-        /// https://docs.y8.com/docs/javascript/auth-functions/
-        /// Opens a menu showing fields needed to register a new user. If the user is already logged in, it will close the menu and return to the redirect URI or callback.
+        /// Asks JS for the user the SDK currently holds synchronously via
+        /// sdk.getUser(). Useful when you want to refresh the cached user
+        /// without triggering a login popup.
+        ///
+        /// Returns IsSuccess=true + the user when a session exists, or
+        /// IsSuccess=false + null when no session is active.
         /// </summary>
-        public async Task<JsResponse<Authorisation>> RegisterAsync()
-        {
-            return await TryCallAsync<Authorisation>("register", null);
-        }
+        public async Task<JsResponse<Y8User>> GetUserAsync() =>
+            await TryCallAsync<Y8User>("getUser", null);
 
         /// <summary>
-        /// https://docs.y8.com/docs/javascript/auth-functions/
-        /// It is the same process as Register
-        /// You may use the same callback and options for Register and Login
+        /// Returns the cached user object without any JS round-trip.
+        /// This is the C# equivalent of the synchronous y8Sdk.getUser() call.
+        /// Returns null when no session is active.
+        /// The value is kept up-to-date by LoginAsync / AutoLoginAsync /
+        /// GetUserAsync and cleared by LogoutAsync.
         /// </summary>
-        public async Task<JsResponse<Authorisation>> LoginAsync()
-        {
-            return await TryCallAsync<Authorisation>("login", null);
-        }
+        public Y8User GetUser() => currentUser;
 
-        public async Task ShowAdAsync()
+        /// <summary>
+        /// Fetches the latest user data from the server, updates the local cache,
+        /// and re-triggers the onAuth callback with the fresh user.
+        ///
+        /// Mirrors: y8Sdk.reloadUser().then(user => { ... })
+        ///
+        /// Returns IsSuccess=true + the refreshed Y8User when a session exists.
+        /// Returns IsSuccess=false + null when no session is active or on error.
+        ///
+        /// Note: onAuth will ALSO fire during this call (updating currentUser a
+        /// second time via AuthCallbackResponse). Both paths produce the same data
+        /// so this is safe — the awaited return value is always from the direct
+        /// reloadUser response.
+        /// </summary>
+        public async Task<JsResponse<Y8User>> ReloadUserAsync() =>
+            await TryCallAsync<Y8User>("reloadUser", null);
+
+        /// <summary>
+        /// Asks JS for the token the SDK currently holds synchronously via
+        /// sdk.getToken(). Refreshes the cached token without triggering a
+        /// login popup.
+        ///
+        /// Returns IsSuccess=true + the token when a session exists, or
+        /// IsSuccess=false + null when not logged in.
+        /// </summary>
+        public async Task<JsResponse<Y8Token>> GetTokenAsync() =>
+            await TryCallAsync<Y8Token>("getToken", null);
+
+        /// <summary>
+        /// Returns the cached token object without any JS round-trip.
+        /// This is the C# equivalent of the synchronous y8Sdk.getToken() call.
+        /// Returns null when not logged in.
+        /// Kept up-to-date by GetTokenAsync() and cleared by LogoutAsync().
+        /// </summary>
+        public Y8Token GetToken() => currentToken;
+
+        /// <summary>
+        /// Exchanges the current refresh token for a new access token and updates
+        /// the local token cache.
+        ///
+        /// Mirrors: y8Sdk.refreshToken().then(token => { ... })
+        ///
+        /// Returns IsSuccess=true + the new Y8Token on success.
+        /// Returns IsSuccess=false + null if not logged in, the refresh token has
+        /// expired, or the server returns an error.
+        ///
+        /// Note: Unlike ReloadUserAsync(), this does NOT trigger onAuth — only the
+        /// token is updated. currentUser is left unchanged.
+        /// </summary>
+        public async Task<JsResponse<Y8Token>> RefreshTokenAsync() =>
+            await TryCallAsync<Y8Token>("refreshToken", null);
+
+        // ── Ads ───────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Shows an ad break of the given type and waits for it to complete.
+        ///
+        /// Subscribe to OnAdPauseGame / OnAdResumeGame to pause/resume your game.
+        /// Inspect the returned AdBreakInfo.Status for the outcome:
+        ///
+        ///   AdBreakStatus.Viewed    → rewarded ad fully watched, grant reward
+        ///   AdBreakStatus.Dismissed → rewarded ad skipped, do NOT grant reward
+        ///   AdBreakStatus.NoFill    → no ad available, show "try later" message
+        ///   AdBreakStatus.Error     → SDK error, handle gracefully
+        ///
+        /// Usage — interstitial:
+        ///   await Y8.Instance.ShowAdAsync(AdType.start);
+        ///
+        /// Usage — rewarded:
+        ///   AdBreakInfo info = await Y8.Instance.ShowAdAsync(AdType.reward);
+        ///   if (info.IsSuccess && info.Data.WasViewed) GrantReward();
+        /// </summary>
+        /// <param name="type">
+        /// Ad break type. Defaults to start (game loaded, before play).
+        /// Use AdType.reward for rewarded ads.
+        /// </param>
+        /// <param name="name">Optional tracking name shown in the Y8 dashboard.</param>
+        public async Task<JsResponse<AdBreakInfo>> ShowAdAsync(
+            AdType type = AdType.start,
+            string name = ""
+        )
         {
-            if (Screen.fullScreen)
+            // if (Screen.fullScreen)
+            // {
+            //     TryDebugLog("Fullscreen detected – skipping ad");
+            //     return new JsResponse<AdBreakInfo>(false, MakeAdBreakInfo(type, "other", name));
+            // }
+
+            if (string.IsNullOrEmpty(GameId))
             {
-                TryDebugLog("Game is running in fullscreen mode, skipping ads");
-                return;
+                TryDebugLog("GameId not set – skipping ad");
+                return new JsResponse<AdBreakInfo>(false, MakeAdBreakInfo(type, "other", name));
             }
 
-            if (string.IsNullOrEmpty(AdsId))
+            string adName = string.IsNullOrEmpty(name) ? type.ToString() + "-game" : name;
+
+            KeyValuePair<string, IConvertible>[] json =
             {
-                TryDebugLog("Ads ID is not set! Please contact the support to receive it if you want to show ads");
-                return;
-            }
+                new("type", type.ToString()),
+                new("name", adName)
+            };
 
-            await TryCallAsync<Empty>("show_ad", null);
+            return await TryCallAsync<AdBreakInfo>("showAd", json);
         }
 
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/game-api/
-        /// Will display all achievements. If a player is logged in, it will display which achievements have been unlocked.
-        /// </summary>
-        public async Task ShowAchievementListAsync()
+        // Helper to build a local AdBreakInfo when skipping before calling JS
+        private static AdBreakInfo MakeAdBreakInfo(AdType type, string status, string name)
         {
-            await TryCallAsync<Empty>("achievement_list", null);
+            AdBreakInfo info =
+                new()
+                {
+                    breakType = type.ToString(),
+                    breakFormat = type.ToString(),
+                    breakStatus = status,
+                    breakName = name
+                };
+            info.ResolveStatus();
+            return info;
         }
 
-        public async Task<JsResponse<AchievementsData>> GetAchievements() {
-            return await TryCallAsync<AchievementsData>("get_achievements", null);
-        }
+        // ── Achievements ──────────────────────────────────────────────────────
+
+        /// <summary>Opens the achievements modal dialog.</summary>
+        public async Task ShowAchievementsAsync() =>
+            await TryCallAsync<Empty>("showAchievements", null);
 
         /// <summary>
-        /// https://docs.y8.com/docs/javascript/game-api/
+        /// Returns all achievements for this app.
+        /// If logged in, includes player unlock status.
         /// </summary>
-        /// <param name="achievement">The title of the achievement. This must exactly match.</param>
-        /// <param name="achievementkey">The unlock key generated from the achievements application page.This must also exactly match.</param>
-        /// <param name="overwrite">(optional) (default: false) Allow players to unlock the same achievement more than once.</param>
-        /// <param name="allowduplicates">(optional)(default: false) Allow players to unlock the same achievement and display them seperatly.</param>
-        public async Task<JsResponse<AchievementSave>> SaveAchievementAsync(string achievement, string achievementkey, bool overwrite = false, bool allowduplicates = false)
+        public async Task<JsResponse<AchievementsData>> GetAchievements() =>
+            await TryCallAsync<AchievementsData>("getAchievements", null);
+
+        /// <summary>
+        /// Unlocks an achievement for the current player. Requires login.
+        /// </summary>
+        /// <param name="achievement">Title — must exactly match the dashboard.</param>
+        /// <param name="achievementkey">Key — must exactly match the dashboard.</param>
+        /// <param name="overwrite">Allow re-unlocking the same achievement.</param>
+        /// <param name="allowduplicates">Allow multiple unlock entries.</param>
+        public async Task<JsResponse<AchievementSave>> AwardAchievementAsync(
+            string achievement,
+            string achievementkey,
+            bool overwrite = false,
+            bool allowduplicates = false
+        )
         {
             if (!IsLoggedIn())
             {
-                TryDebugLog("Player is not logged in! Can't use AchievementSave");
+                TryDebugLog("Player is not logged in! Can't use AwardAchievement");
                 return new JsResponse<AchievementSave>(false, default);
             }
 
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("achievement", achievement),
-                new KeyValuePair<string, IConvertible>("achievementkey", achievementkey),
-                new KeyValuePair<string, IConvertible>("overwrite", overwrite),
-                new KeyValuePair<string, IConvertible>("allowduplicates", allowduplicates)
+            KeyValuePair<string, IConvertible>[] json =
+            {
+                new("achievement", achievement),
+                new("achievementkey", achievementkey),
+                new("overwrite", overwrite),
+                new("allowduplicates", allowduplicates)
             };
 
-            return await TryCallAsync<AchievementSave>("achievement_save", json);
+            return await TryCallAsync<AchievementSave>("awardAchievement", json);
         }
 
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/game-api/
-        /// Return an app’s tables to a callback. Useful only when table names are unknown.
-        /// </summary>
-        public async Task<JsResponse<ScoreTables>> GetTableNamesAsync()
-        {
-            return await TryCallAsync<ScoreTables>("tables", null);
-        }
+        // ── Leaderboards ──────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Returns score data for custom high score menus.
-        /// </summary>
-        /// <param name="table">The exact table name from the app’s high scores page at y8.com. This is also the menu title.</param>
-        /// <param name="mode">A string that equals alltime, last30days, last7days, today, or newest.</param>
-        /// <param name="perPage">(optinal) (default: 20) Number of results to show per page.Max 100.</param>
-        /// <param name="page">(optinal) (default: 1) A number representing the paged results.</param>
-        /// <param name="highest">(optional)(default: true) Set to false if a lower score is better.</param>
-        /// <param name="playerid">(optional) A string representing the player’s id or pid. Used for getting the player’s score(s)</param>
-        public async Task<JsResponse<ScoreTable>> GetCustomScoreAsync(string table, string mode = "alltime", int perPage = 20, int page = 1, bool highest = true, string playerid = "")
+        /// <summary>Returns the leaderboard table names for this app.</summary>
+        public async Task<JsResponse<ScoreTables>> GetLeaderboardsAsync() =>
+            await TryCallAsync<ScoreTables>("getLeaderboards", null);
+
+        /// <summary>Returns score data for a custom leaderboard display.</summary>
+        public async Task<JsResponse<ScoreTable>> GetLeaderboardScoresAsync(
+            string table,
+            string mode = "alltime",
+            int perPage = 20,
+            int page = 1,
+            bool highest = true,
+            string playerid = ""
+        )
         {
-            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
-            new KeyValuePair<string, IConvertible>("table", table),
-            new KeyValuePair<string, IConvertible>("mode", mode),
-            new KeyValuePair<string, IConvertible>("perPage", perPage),
-            new KeyValuePair<string, IConvertible>("page", page),
-            new KeyValuePair<string, IConvertible>("highest", highest)
-        };
-            if (playerid != "")
+            List<KeyValuePair<string, IConvertible>> json =
+                new()
+                {
+                    new("table", table),
+                    new("mode", mode),
+                    new("perPage", perPage),
+                    new("page", page),
+                    new("highest", highest)
+                };
+
+            if (!string.IsNullOrEmpty(playerid))
             {
                 json.Add(new KeyValuePair<string, IConvertible>("playerid", playerid));
             }
 
-            return await TryCallAsync<ScoreTable>("custom_score", json.ToArray());
+            return await TryCallAsync<ScoreTable>("getLeaderboardScores", json.ToArray());
         }
 
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/game-api/
-        /// Display the high scores menu.
-        /// </summary>
-        /// <param name="tableTitle">The exact table name from the app’s high scores page at y8.com. This is also the menu title.</param>
-        /// <param name="mode">(optional) A string that equals alltime, last30days, last7days, today, or newest.</param>
-        /// <param name="highest">(optional)(default: true) Set to false if a lower score is better.</param>
-        /// <param name="useMilli">(optional)(default: false) Render scores in milliseconds.</param>
-        public async Task ShowScoreListAsync(string tableTitle, string mode = "alltime", bool highest = true, bool useMilli = false)
+        /// <summary>Opens the built-in leaderboard modal dialog.</summary>
+        public async Task ShowLeaderboardAsync(
+            string tableTitle,
+            string mode = "alltime",
+            bool highest = true,
+            bool useMilli = false
+        )
         {
-            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
-            new KeyValuePair<string, IConvertible>("table", tableTitle),
-            new KeyValuePair<string, IConvertible>("mode", mode),
-            new KeyValuePair<string, IConvertible>("highest", highest)
-        };
+            List<KeyValuePair<string, IConvertible>> json =
+                new() { new("table", tableTitle), new("mode", mode), new("highest", highest) };
+
             if (useMilli)
-            {              
+            {
                 json.Add(new KeyValuePair<string, IConvertible>("useMilli", useMilli));
             }
 
-            await TryCallAsync<Empty>("score_list", json.ToArray());
+            await TryCallAsync<Empty>("showLeaderboard", json.ToArray());
         }
 
         /// <summary>
-        /// https://docs.y8.com/docs/javascript/game-api/
-        /// Saves a player score.
+        /// Saves a score for the current player. Requires login.
         /// </summary>
-        /// <param name="table">The exact table name from the app’s high scores page at Y8.com.</param>
-        /// <param name="points">A number representing the player’s score</param>
-        /// <param name="allowduplicates">(optional) (default: false) Set to true if player’s can submit more than one score.</param>
-        /// <param name="highest">(optional) (default: true) Set to false if a lower score is better.</param>
-        public async Task<JsResponse<ScoreSave>> SaveScoreAsync(string table, int points, bool allowduplicates = false, bool highest = true)
+        public async Task<JsResponse<ScoreSave>> SaveLeaderboardScoreAsync(
+            string table,
+            int points,
+            bool allowduplicates = false,
+            bool highest = true
+        )
         {
             if (!IsLoggedIn())
             {
-                TryDebugLog("Player is not logged in! Can't use ScoreSave");
+                TryDebugLog("Player is not logged in! Can't use SaveLeaderboardScore");
                 return new JsResponse<ScoreSave>(false, default);
             }
 
-            List<KeyValuePair<string, IConvertible>> json = new List<KeyValuePair<string, IConvertible>> {
-                new KeyValuePair<string, IConvertible>("table", table),
-                new KeyValuePair<string, IConvertible>("points", points),
-                new KeyValuePair<string, IConvertible>("allowduplicates", allowduplicates),
-                new KeyValuePair<string, IConvertible>("highest", highest),
-                new KeyValuePair<string, IConvertible>("playername", Nickname())
-            };
+            List<KeyValuePair<string, IConvertible>> json =
+                new()
+                {
+                    new("table", table),
+                    new("points", points),
+                    new("allowduplicates", allowduplicates),
+                    new("highest", highest),
+                    new("playername", Nickname())
+                };
 
-            return await TryCallAsync<ScoreSave>("score_save", json.ToArray());
+            return await TryCallAsync<ScoreSave>("saveLeaderboardScore", json.ToArray());
         }
+
+        // ── Online Saves ──────────────────────────────────────────────────────
 
         /// <summary>
-        /// IMPORTANT: this feature is not available in the Unity SDK, so it cannot be tested from the Unity Editor.
-        /// To use this feature, it is necessary to build a WebGL version of your project which will call the JS SDK.
-        /// https://docs.y8.com/docs/javascript/app-request-dialog/
-        /// This SDK provides the ability to send an application request to invite friends to your application.
-        /// To find more info on how your application can process those requests: https://docs.y8.com/docs/api/reference/requests/
+        /// Saves a string value under the given key. Requires login.
+        /// Max value size: 30 KB.
         /// </summary>
-        /// <param name="message">Invitation string that will appear in recipient's activity feed after request is sent.</param>
-        /// <param name="redirect_uri">The URL to redirect to after a person clicks an 'Accept' button in the activity feed.</param>
-        /// <param name="data">Arbitrary string that can store some data for your application.It will not be seen by the user.</param>
-        public async Task AppRequestAsync(string message = "<message>", string redirect_uri = "", string data = "")
-        {
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("method", "apprequests"),
-                new KeyValuePair<string, IConvertible>("message", message),
-                new KeyValuePair<string, IConvertible>("redirect_uri", redirect_uri),
-                new KeyValuePair<string, IConvertible>("data", data)
-            };
-
-            await TryCallAsync<Empty>("app_request", json);
-        }
-
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/friend-request-dialog/
-        /// Y8.com SDK provides the ability to send a friend request from your application
-        /// </summary>
-        /// <param name="redirect_uri">The URL to redirect to after a person clicks a button on the dialog.</param>
-        /// <param name="id">PID of the user in the application.</param>
-        public async Task FriendRequestAsync(string _id, string redirect_uri = "")
-        {
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("method", "friends"),
-                new KeyValuePair<string, IConvertible>("id", _id),
-                new KeyValuePair<string, IConvertible>("redirect_uri", redirect_uri)
-            };
-
-            await TryCallAsync<Empty>("friend_request", json);
-        }
-
-        /// <summary>    ///
-        /// https://docs.y8.com/docs/javascript/share-dialog/
-        /// This SDK provides the ability to share an activity from your application.
-        /// This activity will appear on the User’s feed page and feeds of his followers.
-        /// [Currently not available]
-        /// </summary>
-        /// <param name="link">The link where the user will be redirected by clicking on the shared content</param>
-        /// <param name="description">The description of the content to share</param>
-        /// <param name="name">The title of the content to share. If the "link" parameter is sent as well, then the link URL will be replaced by a link with the "name" parameter as text and the "link" paramater as redirection URL.</param>
-        /// <param name="caption">The caption of the link/name</param>
-        /// <param name="picture">The picture of the content to share.Has to be an absolute URL.</param>
-        public async Task ShareAsync(string link, string description, string name = "", string caption = "", string picture = "")
-        {
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("method", "feed"),
-                new KeyValuePair<string, IConvertible>("link", link),
-                new KeyValuePair<string, IConvertible>("description", description),
-                new KeyValuePair<string, IConvertible>("name", name),
-                new KeyValuePair<string, IConvertible>("caption", caption),
-                new KeyValuePair<string, IConvertible>("picture", picture),
-            };
-
-            await TryCallAsync<Empty>("share", json);
-        }
-
-
-
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/online-saves/
-        /// Save the value, for later retrieval using the key.
-        /// The online save API provides user data storage for applications. It is useful for storing game states and other small data sets that a user may want to reuse later on a different device.
-        /// If you want to save frequently, such as when a player changes a setting, the code must buffer and retry failed submits. Submitting data could fail if things are saved too freqently.
-        /// </summary>
-        /// <param name="key">The key (or name) to be stored.</param>
-        /// <param name="value">The value to be stored for access with that key.</param>
-        public async Task<JsResponse<SetData>> SetDataAsync(string key, string value)
+        public async Task<JsResponse<SetData>> SaveDataAsync(string key, string value)
         {
             if (!IsLoggedIn())
             {
-                TryDebugLog("Player is not logged in! Can't use SetData");
+                TryDebugLog("Player is not logged in! Can't use SaveData");
                 return new JsResponse<SetData>(false, default);
             }
 
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("key", key),
-                new KeyValuePair<string, IConvertible>("value", value)
-            };
+            KeyValuePair<string, IConvertible>[] json = { new("key", key), new("value", value) };
 
-            return await TryCallAsync<SetData>("set_data", json);
+            return await TryCallAsync<SetData>("saveData", json);
         }
 
-        public async Task<JsResponse<SetData>> SaveDataAsync<T>(string key, T data) where T: class
+        /// <summary>Serialises data to JSON and saves it. Requires login.</summary>
+        public async Task<JsResponse<SetData>> SaveDataAsync<T>(string key, T data)
+            where T : class
         {
             string stringData = JsonUtility.ToJson(data).Replace("\"", "\'");
-            return await SetDataAsync(key, stringData);
+            return await SaveDataAsync(key, stringData);
         }
 
-        public async Task<JsResponse<T>> LoadSaveDataAsync<T>(string key) where T: class
+        /// <summary>Loads and deserialises a previously saved object. Requires login.</summary>
+        public async Task<JsResponse<T>> LoadDataAsync<T>(string key)
+            where T : class
         {
-            JsResponse<GetData> serializedResponse = await GetDataAsync(key);
-
+            JsResponse<GetData> raw = await LoadDataAsync(key);
             T data = null;
-            if (serializedResponse.IsSuccess)
+
+            if (raw.IsSuccess && raw.Data != null && !string.IsNullOrEmpty(raw.Data.value))
             {
-                data = JsonUtility.FromJson<T>(serializedResponse.Data.jsondata.Replace("\'", "\""));               
+                data = JsonUtility.FromJson<T>(raw.Data.value.Replace("\'", "\""));
             }
 
-            return new JsResponse<T>(serializedResponse.IsSuccess, data);
-
+            return new JsResponse<T>(raw.IsSuccess, data);
         }
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/online-saves/
-        /// Retrieve the value saved using this key.
-        /// The online save API provides user data storage for applications. It is useful for storing game states and other small data sets that a user may want to reuse later on a different device.
-        /// </summary>
-        /// <param name="key">The key (or name) to be retrieved.</param>
-        public async Task<JsResponse<GetData>> GetDataAsync(string key)
+
+        /// <summary>Retrieves the raw string value for a key. Requires login.</summary>
+        public async Task<JsResponse<GetData>> LoadDataAsync(string key)
         {
             if (!IsLoggedIn())
             {
-                TryDebugLog("Player is not logged in! Can't use GetData");
+                TryDebugLog("Player is not logged in! Can't use LoadData");
                 return new JsResponse<GetData>(false, default);
             }
 
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("key", key)
-            };
+            KeyValuePair<string, IConvertible>[] json = { new("key", key) };
 
-            return await TryCallAsync<GetData>("get_data", json);
+            return await TryCallAsync<GetData>("loadData", json);
         }
 
-        /// <summary>
-        /// https://docs.y8.com/docs/javascript/online-saves/
-        /// Remove a key/value pair from the saved data.
-        /// The online save API provides user data storage for applications. It is useful for storing game states and other small data sets that a user may want to reuse later on a different device.
-        /// </summary>
-        /// <param name="key">The key (or name) to be deleted with its corresponding value.</param>
-        public async Task<JsResponse<SetData>> ClearDataAsync(string key)
+        /// <summary>Removes a key/value pair from online saves. Requires login.</summary>
+        public async Task<JsResponse<SetData>> RemoveDataAsync(string key)
         {
             if (!IsLoggedIn())
             {
@@ -395,210 +520,90 @@ namespace Y8API
                 return new JsResponse<SetData>(false, default);
             }
 
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("key", key)
-            };
+            KeyValuePair<string, IConvertible>[] json = { new("key", key) };
 
-            return await TryCallAsync<SetData>("clear_data", json);
+            return await TryCallAsync<SetData>("removeData", json);
         }
 
-        /// <summary>
-        /// Check if the current URL is blacklisted
-        /// </summary>
-        /// <returns>true if it is</returns>
-        public async Task<JsResponse<bool>> IsBlacklistedAsync()
-        {
-            return await TryCallAsync<bool>("blacklist", null);
-        }
+        // ── App Image ─────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Check if the current URL is a sponsor
+        /// Submits a screenshot to the player's Y8 profile. Requires login.
+        /// Use a coroutine with WaitForEndOfFrame when capturing the screen.
         /// </summary>
-        /// <returns>true if it is</returns>
-        public async Task<JsResponse<bool>> IsSponsorAsync()
-        {
-
-            return await TryCallAsync<bool>("sponsor", null);
-        }
-        /// <summary>
-        /// Saves a texture as a screenshot. Use coroutine with WaitForEndOfFrame if you are using CaptureScreenshotAsTexture
-        /// </summary>
-        /// <param name="screenshotTexture"></param>
-        /// <returns></returns>
-        public async Task<JsResponse<SavedScreenshot>> SaveScreenshotAsync(Texture2D screenshotTexture)
+        public async Task<JsResponse<SavedScreenshot>> SubmitImageAsync(Texture2D screenshotTexture)
         {
             if (!IsLoggedIn())
             {
-                TryDebugLog("Player is not logged in! Can't save screenshot");
+                TryDebugLog("Player is not logged in! Can't submit Image");
                 return new JsResponse<SavedScreenshot>(false, default);
             }
 
-            byte[] screenshotData = screenshotTexture.EncodeToJPG();
-            string screenshotDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(screenshotData)}";  
+            byte[] bytes = screenshotTexture.EncodeToJPG();
+            string dataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
 
-            KeyValuePair<string, IConvertible>[] json = {
-                new KeyValuePair<string, IConvertible>("data", screenshotDataUrl)
-            };
+            KeyValuePair<string, IConvertible>[] json = { new("data", dataUrl) };
 
-            return await TryCallAsync<SavedScreenshot>("save_screenshot", json);
+            return await TryCallAsync<SavedScreenshot>("submitImage", json);
         }
 
-        ///
-        /// Quick access methods to immediately return values (often acquired in the user authentication response)
-        ///
+        // ── Profile ───────────────────────────────────────────────────────────
 
         /// <summary>
-        /// true if the user is logged in to Y8.com
+        /// Opens the current player's Y8 profile in a new tab. Requires login.
         /// </summary>
-        public bool IsLoggedIn()
+        public async Task OpenProfileAsync()
         {
-            return auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null
-                && !string.IsNullOrEmpty(auth.authResponse.details.pid);
+            if (!IsLoggedIn())
+            {
+                TryDebugLog("Player is not logged in! Can't open profile");
+                return;
+            }
+
+            await TryCallAsync<Empty>("openProfile", null);
         }
 
-        /// <summary>
-        /// the Unity SDK SessionToken or the JS SDK access_token or null if not authenticated yet
-        /// </summary>
-        public string SessionToken()
-        {
-            if (auth != null && auth.authResponse != null)
-            {
-                return auth.authResponse.access_token;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        // ── Quick-access helpers ──────────────────────────────────────────────
 
-        /// <summary>
-        /// the player's PID or null if not authenticated yet
-        /// </summary>
-        public string PID()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.pid;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>true if the user is currently authenticated.</summary>
+        public bool IsLoggedIn() => currentUser != null && !string.IsNullOrEmpty(currentUser.pid);
 
-        /// <summary>
-        /// the player's first name or null if not authenticated yet
-        /// </summary>
-        public string FirstName()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.first_name;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>The current access token, or empty string.</summary>
+        public string SessionToken() => currentUser?.access_token ?? string.Empty;
 
-        /// <summary>
-        /// the player's nickname or null if not authenticated yet
-        /// </summary>
-        public string Nickname()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.nickname;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>The player's PID, or empty string.</summary>
+        public string PID() => currentUser?.pid ?? string.Empty;
 
-        /// <summary>
-        /// the player's date of birth or null if not authenticated yet
-        /// NOTE: in Unity Editor the day will always be '1'
-        /// format is Y-M-D
-        /// </summary>
-        public string DateOfBirth()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.dob;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>The player's first name, or empty string.</summary>
+        public string FirstName() => currentUser?.first_name ?? string.Empty;
 
-        /// <summary>
-        /// the player's gender or null if not authenticated yet
-        /// </summary>
-        public string Gender()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.gender;
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>The player's nickname, or empty string.</summary>
+        public string Nickname() => currentUser?.nickname ?? string.Empty;
 
-        /// <summary>
-        /// the player's language or null if not authenticated yet
-        /// </summary>
-        public string Language()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.language;
-            }
-            else
-            {
-                return CultureInfo.CurrentCulture.Name;
-            }
-        }
+        /// <summary>The player's date of birth (Y-M-D), or empty string.</summary>
+        public string DateOfBirth() => currentUser?.dob ?? string.Empty;
 
-        /// <summary>
-        /// the player's locale or null if not authenticated yet
-        /// </summary>
-        public string Locale()
-        {
-            if (auth != null
-                && auth.authResponse != null
-                && auth.authResponse.details != null)
-            {
-                return auth.authResponse.details.locale;
-            }
-            else
-            {
-                return CultureInfo.CurrentCulture.Name;
-            }
-        }
+        /// <summary>The player's gender, or empty string.</summary>
+        public string Gender() => currentUser?.gender ?? string.Empty;
 
-        //
-        // general helpers for the SDK feature calls
-        //
+        /// <summary>The player's language setting, or system culture.</summary>
+        public string Language() =>
+            !string.IsNullOrEmpty(currentUser?.language)
+                ? currentUser.language
+                : CultureInfo.CurrentCulture.Name;
 
-        private async Task<JsResponse<T>> TryCallAsync<T>(string requestName, KeyValuePair<string, IConvertible>[] kvPairs)
+        /// <summary>The player's locale, or system culture.</summary>
+        public string Locale() =>
+            !string.IsNullOrEmpty(currentUser?.locale)
+                ? currentUser.locale
+                : CultureInfo.CurrentCulture.Name;
+
+        // ── Internal async machinery ──────────────────────────────────────────
+
+        private async Task<JsResponse<T>> TryCallAsync<T>(
+            string requestName,
+            KeyValuePair<string, IConvertible>[] kvPairs
+        )
         {
             if (!isReady)
             {
@@ -617,144 +622,310 @@ namespace Y8API
 
             string json = ConvertListToJson(kvPairs);
             TryDebugLog($"JS call [{callId}] with JSON = {json}");
-            Call(id, requestName, json);
+            Call(callId, requestName, json);
 
-            while (!callIdToResponse.ContainsKey(callId)) await Task.Yield();
+            while (!callIdToResponse.ContainsKey(callId))
+            {
+                await Task.Yield();
+            }
 
             object response = callIdToResponse[callId];
             callIdToResponse.Remove(callId);
-
             return (JsResponse<T>)response;
         }
 
-        private static string ConvertListToJson(KeyValuePair<string, IConvertible>[] _kvList)
+        private static string ConvertListToJson(KeyValuePair<string, IConvertible>[] kvList)
         {
-            if (_kvList == null) return "";
+            if (kvList == null)
+            {
+                return "";
+            }
 
             string s = "{ ";
-            for (int i = 0, l = _kvList.Length; i < l; i++)
+            for (int i = 0, l = kvList.Length; i < l; i++)
             {
-                s += $"\"{_kvList[i].Key}\":";
-                if (_kvList[i].Value is string stringValue)
+                s += $"\"{kvList[i].Key}\":";
+
+                if (kvList[i].Value is string sv)
                 {
-                    s += $"\"{stringValue}\"";
+                    s += $"\"{sv}\"";
                 }
-                else if (_kvList[i].Value is bool boolValue)
+                else if (kvList[i].Value is bool bv)
                 {
-                    s += boolValue.ToString().ToLower();
+                    s += bv.ToString().ToLower();
                 }
                 else
                 {
-                    s += _kvList[i].Value;
+                    s += kvList[i].Value;
                 }
 
-                if (i + 1 < _kvList.Length)
+                if (i + 1 < l)
                 {
                     s += ",";
                 }
             }
             s += " }";
-
             return s;
         }
 
-        //
-        // JS callback functions to report status to Unity C#
-        //
+        // ── JS → C# callbacks ─────────────────────────────────────────────────
 
-        // call-back from JS when the system has completed init
+        /// <summary>Called by JS when the SDK has finished initializing.</summary>
         public void CallbackReady()
         {
-            TryDebugLog("Y8 login system is ready.");
+            TryDebugLog("Y8 SDK 2.0 is ready.");
             isReady = true;
         }
 
-        // call-back from JS with the auth response
-        public void AuthCallbackResponse(string _response)
+        /// <summary>Called by JS when onAuth fires with a valid user or not_connected.</summary>
+        public void AuthCallbackResponse(string responseJson)
         {
-            int authId = id;    // id could change in the callback, remember its current value
-            TryDebugLog($"AuthResponse from JS: {_response} ");
-            auth = JsonUtility.FromJson<Authorisation>(_response);
+            int authCallId = id;
+            TryDebugLog($"AuthResponse from JS: {responseJson}");
 
-            callIdToResponse.Add(authId, new JsResponse<Authorisation>(IsLoggedIn(), auth));
+            AuthPayload payload = JsonUtility.FromJson<AuthPayload>(responseJson);
+            Debug.Log(payload.status);
+            Debug.Log(payload.user);
+
+            bool ok = payload?.user != null && !string.IsNullOrEmpty(payload.user.pid);
+            currentUser = ok ? payload.user : null;
+
+            if (currentUser == null)
+            {
+                callIdToResponse.Add(authCallId, new JsResponse<Empty>(ok, default));
+                return;
+            }
+
+            callIdToResponse.Add(authCallId, new JsResponse<Y8User>(ok, currentUser));
         }
 
-        // call-back to C# from JS with the response to a request packed into a Y8_Data class
-        public void CallbackResponse(string _responseString)
+        /// <summary>
+        /// Called by JS when onAuth fires with an error.
+        /// Fires OnAuthError event and resolves the pending LoginAsync with failure.
+        /// </summary>
+        public void AuthCallbackError(string errorJson)
         {
-            // extract the response string components
-            // the format is always <request string>[<id number>]=<response>
+            TryDebugLog($"AuthCallbackError from JS: {errorJson}");
 
-            // extract the id from square brackets
-            int ob = _responseString.IndexOf("[");
-            int cb = _responseString.IndexOf("]");
-            string request = _responseString.Substring(0, ob);
-            int _id = int.Parse(_responseString.Substring(ob + 1, cb - ob - 1));
-            string responseData = _responseString.Substring(cb + 2);
-            TryDebugLog($"Response from JS: {request}[{_id}] = '{responseData}'");
+            AuthError err =
+                JsonUtility.FromJson<AuthError>(errorJson) ?? new AuthError { message = errorJson };
 
-            object response = responseData;      // default value to the response string
+            OnAuthError?.Invoke(err);
 
-            // parse the response JSON into the correct C# class object so it can be accessed easily
-            switch (request)
+            // Resolve the pending TryCallAsync (login / autoLogin) with failure
+            callIdToResponse.Add(id, new JsResponse<Y8User>(false, null));
+        }
+
+        // ── Ad lifecycle callbacks (only pause/resume) ────────────────────────
+
+        /// <summary>JS beforeAd — pause game audio/logic.</summary>
+        public void AdPauseGame(string _)
+        {
+            TryDebugLog("AdPauseGame");
+            OnAdPauseGame?.Invoke();
+        }
+
+        /// <summary>JS resumeOnce — resume game audio/logic.</summary>
+        public void AdResumeGame(string _)
+        {
+            TryDebugLog("AdResumeGame");
+            OnAdResumeGame?.Invoke();
+        }
+
+        /// <summary>
+        /// Returns the locale code of the platform the game is running on
+        /// (e.g. "fr", "de", "ja").
+        /// Derived from the platform subdomain detected via postMessage during init.
+        /// Returns "en" for unrecognised subdomains (including www).
+        /// Does not require login.
+        /// </summary>
+        public async Task<JsResponse<PlatformLocale>> GetPlatformLocaleAsync()
+        {
+            return await TryCallAsync<PlatformLocale>("getPlatformLocale", null);
+        }
+
+        /// <summary>
+        /// Checks whether the current domain is on the Y8 blacklist.
+        /// Does not require login.
+        /// The protection list is fetched once and cached for subsequent calls.
+        /// Rejects on network or server errors — treated as false (not blacklisted) by default.
+        /// </summary>
+        /// <returns>true if the current domain is blacklisted.</returns>
+        public async Task<JsResponse<bool>> IsBlacklistedAsync()
+        {
+            return await TryCallAsync<bool>("isBlacklisted", null);
+        }
+
+        /// <summary>
+        /// Called by JS for every non-auth response.
+        /// Protocol: request[id]=json
+        /// </summary>
+        public void CallbackResponse(string responseString)
+        {
+            int ob = responseString.IndexOf('[');
+            int cb = responseString.IndexOf(']');
+            string req = responseString.Substring(0, ob);
+            int _id = int.Parse(responseString.Substring(ob + 1, cb - ob - 1));
+            string data = responseString.Substring(cb + 2);
+
+            TryDebugLog($"Response from JS: {req}[{_id}] = '{data}'");
+
+            object response;
+
+            switch (req)
             {
-                case "achievement_save":
-                    AchievementSave achSave = JsonUtility.FromJson<AchievementSave>(responseData);
-                    response = new JsResponse<AchievementSave>(achSave.success, achSave);
+                // show_ad returns AdBreakInfo with a typed Status enum
+                case "showAd":
+                {
+                    AdBreakInfo info = JsonUtility.FromJson<AdBreakInfo>(data) ?? new AdBreakInfo();
+                    info.ResolveStatus(); // populate the AdBreakStatus enum from raw breakStatus string
+                    response = new JsResponse<AdBreakInfo>(true, info);
                     break;
-
-                case "get_achievements":
-                    AchievementsData achievementsData = JsonUtility.FromJson<AchievementsData>(responseData);
-                    response = new JsResponse<AchievementsData>(achievementsData.success, achievementsData);
+                }
+                case "awardAchievement":
+                {
+                    AchievementSave d = JsonUtility.FromJson<AchievementSave>(data);
+                    response = new JsResponse<AchievementSave>(d.success, d);
                     break;
-
-                case "score_save":
-                    ScoreSave scoreSave = JsonUtility.FromJson<ScoreSave>(responseData);
-                    response = new JsResponse<ScoreSave>(scoreSave.success, scoreSave);
+                }
+                case "getAchievements":
+                {
+                    AchievementsData d = JsonUtility.FromJson<AchievementsData>(data);
+                    response = new JsResponse<AchievementsData>(d?.achievements != null, d);
                     break;
-
-                case "set_data":
-                case "clear_data":
-                    SetData setData = JsonUtility.FromJson<SetData>(responseData);
-                    response = new JsResponse<SetData>(setData.status == "ok", setData);
+                }
+                case "saveLeaderboardScore":
+                {
+                    ScoreSave d = JsonUtility.FromJson<ScoreSave>(data);
+                    response = new JsResponse<ScoreSave>(d.success, d);
                     break;
-
-                case "get_data":
-                    GetData getData = JsonUtility.FromJson<GetData>(responseData);
-                    response = new JsResponse<GetData>(string.IsNullOrEmpty(getData.error), getData);
+                }
+                case "saveData":
+                case "removeData":
+                {
+                    SetData d = JsonUtility.FromJson<SetData>(data);
+                    response = new JsResponse<SetData>(d.success, d);
                     break;
-
-                case "custom_score":
-                    ScoreTable getTable = JsonUtility.FromJson<ScoreTable>(responseData);
-                    response = new JsResponse<ScoreTable>(getTable.errorcode == 0, getTable);
+                }
+                case "loadData":
+                {
+                    GetData d = JsonUtility.FromJson<GetData>(data);
+                    response = new JsResponse<GetData>(string.IsNullOrEmpty(d.error), d);
                     break;
-
-                case "tables":
-                    ScoreTables getTables = JsonUtility.FromJson<ScoreTables>(responseData);
-                    response = new JsResponse<ScoreTables>(getTables.errorcode == 0, getTables);
+                }
+                case "getLeaderboardScores":
+                {
+                    ScoreTable d = JsonUtility.FromJson<ScoreTable>(data);
+                    response = new JsResponse<ScoreTable>(d?.items != null, d);
                     break;
+                }
+                case "getLeaderboards":
+                {
+                    ScoreTables d = JsonUtility.FromJson<ScoreTables>(data);
+                    response = new JsResponse<ScoreTables>(d?.tables != null, d);
+                    break;
+                }
+                case "autoLogin":
+                {
+                    AuthPayload p = JsonUtility.FromJson<AuthPayload>(data);
+                    bool ok = p?.user != null && !string.IsNullOrEmpty(p.user.pid);
+                    if (ok)
+                    {
+                        currentUser = p.user;
+                    }
 
-                case "show_ad":
-                case "share":
-                case "score_list":
-                case "app_request":
-                case "friend_request":
-                case "achievement_list":
+                    response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
+                    break;
+                }
+                case "reloadUser":
+                {
+                    AuthPayload p = JsonUtility.FromJson<AuthPayload>(data);
+                    bool ok = p?.user != null && !string.IsNullOrEmpty(p.user.pid);
+                    if (ok)
+                    {
+                        currentUser = p.user;
+                    }
+                    else
+                    {
+                        currentUser = null;
+                    }
+
+                    response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
+                    break;
+                }
+                case "getUser":
+                {
+                    GetUserPayload p = JsonUtility.FromJson<GetUserPayload>(data);
+                    bool ok = p?.user != null && !string.IsNullOrEmpty(p.user.pid);
+                    if (ok)
+                    {
+                        currentUser = p.user;
+                    }
+
+                    response = new JsResponse<Y8User>(ok, ok ? currentUser : null);
+                    break;
+                }
+                case "getToken":
+                {
+                    TokenPayload p = JsonUtility.FromJson<TokenPayload>(data);
+                    bool ok = p?.token != null && !string.IsNullOrEmpty(p.token.access_token);
+                    if (ok)
+                    {
+                        currentToken = p.token;
+                    }
+                    else
+                    {
+                        currentToken = null;
+                    }
+
+                    response = new JsResponse<Y8Token>(ok, currentToken);
+                    break;
+                }
+                case "refreshToken":
+                {
+                    TokenPayload p = JsonUtility.FromJson<TokenPayload>(data);
+                    bool ok = p?.token != null && !string.IsNullOrEmpty(p.token.access_token);
+                    if (ok)
+                    {
+                        currentToken = p.token;
+                    }
+                    else
+                    {
+                        currentToken = null;
+                    }
+
+                    response = new JsResponse<Y8Token>(ok, currentToken);
+                    break;
+                }
+                case "submitImage":
+                {
+                    SavedScreenshot d = JsonUtility.FromJson<SavedScreenshot>(data);
+                    response = new JsResponse<SavedScreenshot>(d.success, d);
+                    break;
+                }
+                // case "logout":
+                case "showLeaderboard":
+                case "showAchievements":
+                case "openProfile":
                     response = new JsResponse<Empty>(true, default);
                     break;
 
-                case "blacklist":
-                case "sponsor":
-                    bool.TryParse(responseData, out bool isTrue);
-                    response = new JsResponse<bool>(true, isTrue);
+                case "isBlacklisted":
+                    bool.TryParse(data, out bool isBlacklisted);
+                    response = new JsResponse<bool>(true, isBlacklisted);
                     break;
 
-                case "save_screenshot":
-                    SavedScreenshot savedScreenshot = JsonUtility.FromJson<SavedScreenshot>(responseData);
-                    response = new JsResponse<SavedScreenshot>(savedScreenshot.success, savedScreenshot);
+                case "getPlatformLocale":
+                    PlatformLocale platformLocale = JsonUtility.FromJson<PlatformLocale>(data);
+                    response = new JsResponse<PlatformLocale>(
+                        !string.IsNullOrEmpty(platformLocale.locale),
+                        platformLocale
+                    );
                     break;
+
                 default:
-                    TryDebugLog($"Unhandled request type: {request}");
+                    TryDebugLog($"Unhandled request type: {req}");
+                    response = new JsResponse<Empty>(false, default);
                     break;
             }
 
@@ -765,9 +936,29 @@ namespace Y8API
         {
             if (showDebugMessages)
             {
-                Debug.Log(message);
+                Debug.Log($"[Y8] {message}");
             }
-          
+        }
+
+        // ── Inner types ───────────────────────────────────────────────────────
+
+        [Serializable]
+        private class AuthPayload
+        {
+            public string status = "";
+            public Y8User user = null;
+        }
+
+        [Serializable]
+        private class GetUserPayload
+        {
+            public Y8User user = null;
+        }
+
+        [Serializable]
+        private class TokenPayload
+        {
+            public Y8Token token = null;
         }
     }
 }

@@ -1,27 +1,33 @@
-# Lightweight Y8 SDK
+# Y8 SDK 2.0 — Unity Bridge
 
-## How to set up 
-1) Download the UnityPackage and import it into your project (https://github.com/Y8Games/unity-sdk-lightweight/releases)
-2) Drag and drop the prefab from Assets > Y8 > Y8Root into your main scene (for example preloader or splash screen scene)
-3) go to https://account.y8.com/applications and create new application
-4) Copy paste the application ID into the Y8Root prefab in your scene (also ask support for Ads Id if you are partner)
-5) When building WebGL, use the Y8 template `Y8_2020_LTS` 
+## Live demo
 
-## How to use Y8 functions
-1) Add `using Y8API;` to your using directives
-2) Call awaitable methods on Y8, for example `var loginInfo = await Y8.Instance.LoginAsync();` 
-3) Check *[TestScene](https://github.com/Y8Games/unity-sdk-lightweight/blob/main/Assets/Y8/TestScene/Scripts/TestWrapper.cs)* for all available methods and usage 
+https://storage-direct.y8.com/bitlaslt/unity_webgl/unity-sdk-lightweight_0_2_9/index.html
 
-## Ads guidelines
-- You will need to be approved as a Y8 partner first, please contact the support to receive AdsID
-- Always **pause the game (including all sounds)** before playing the ads
+---
 
-Example:
-```
-public async void ShowAd()
+## Setup
+
+1. Download the UnityPackage and import it into your project
+   (https://github.com/Y8Games/unity-sdk-lightweight/releases)
+2. Drag the prefab from `Assets > Y8 > Y8Root` into your main scene
+   (e.g. preloader or splash screen)
+3. Create an application at https://account.y8.com/applications
+4. Paste the **App ID** into the Y8Root prefab inspector
+   (contact Y8 support for an **Ads Game ID** if you are a partner)
+5. When building WebGL, select the `Y8_Responsive` template under
+   `Project Settings > Player > Resolution and Presentation`
+
+---
+
+## Basic usage
+
+```csharp
+using Y8API;
+
+// All async methods return JsResponse<T>
+JsResponse<Y8User> response = await Y8.Instance.LoginAsync();
+if (response.IsSuccess)
 {
-    PauseGame(); // Should pause all sounds as well
-    await Y8.Instance.ShowAdAsync();
-    UnpauseGame();     
+    Debug.Log(response.Data.nickname);
 }
-```
