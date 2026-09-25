@@ -143,6 +143,54 @@ namespace Y8API
         }
     }
 
+    // ─── Banners ──────────────────────────────────────────────────────────────
+
+    /// <summary>The banner sizes the SDK serves, in CSS pixels (width x height).</summary>
+    public enum BannerSize
+    {
+        Leaderboard_728x90,
+        Medium_300x250,
+        Mobile_320x50,
+        Main_468x60,
+        LargeMobile_320x100
+    }
+
+    public static class BannerSizes
+    {
+        public static int Width(this BannerSize size) => size switch
+        {
+            BannerSize.Leaderboard_728x90 => 728,
+            BannerSize.Medium_300x250 => 300,
+            BannerSize.Mobile_320x50 => 320,
+            BannerSize.Main_468x60 => 468,
+            _ => 320,
+        };
+
+        public static int Height(this BannerSize size) => size switch
+        {
+            BannerSize.Leaderboard_728x90 => 90,
+            BannerSize.Medium_300x250 => 250,
+            BannerSize.Mobile_320x50 => 50,
+            BannerSize.Main_468x60 => 60,
+            _ => 100,
+        };
+    }
+
+    /// <summary>
+    /// Returned by RequestBannerAsync(). shown (and IsSuccess) = the banner is showing.
+    /// Otherwise code is the SDK's reason: bannerCooldown (a banner of this size was
+    /// requested too recently; the current one stays), unfilled, invalidSize (the
+    /// placeholder is smaller on screen than the banner), notVisible, videoAdPlaying,
+    /// maxRefreshReached, bannersUnavailable, missingId or other.
+    /// </summary>
+    [Serializable]
+    public class BannerResult
+    {
+        public bool shown = false;
+        public string code = "";
+        public string message = "";
+    }
+
     // ─── Achievements ─────────────────────────────────────────────────────────
 
     [Serializable]

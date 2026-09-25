@@ -16,6 +16,10 @@ public class TestWrapper : MonoBehaviour
     [SerializeField]
     private TextMeshProUGUI debugText;
 
+    [SerializeField]
+    [Tooltip("Placeholder for the test banner: an empty UI element with a Y8BannerSlot.")]
+    private Y8BannerSlot bannerSlot;
+
     // ── Subscribe to the two game-lifecycle ad events ─────────────────────────
 
     private void OnEnable()
@@ -419,6 +423,30 @@ public class TestWrapper : MonoBehaviour
     {
         JsResponse<PlatformLocale> response = await Y8.Instance.GetPlatformLocaleAsync();
         LogDebug($"Is Success: {response.IsSuccess}, Platform Locale: {response.Data?.locale}");
+    }
+
+    // ── Banners ───────────────────────────────────────────────────────────────
+
+    public async void ButtonRequestBannerAsync()
+    {
+        if (bannerSlot == null)
+        {
+            LogDebug("[TestWrapper] No Y8BannerSlot assigned for the test banner");
+            return;
+        }
+
+        JsResponse<BannerResult> response = await bannerSlot.RequestAsync();
+        LogDebug(
+            response.IsSuccess
+                ? $"Banner {bannerSlot.Size} showing"
+                : $"No banner: {response.Data?.code} {response.Data?.message}"
+        );
+    }
+
+    public void ButtonClearBanners()
+    {
+        Y8.Instance.ClearAllBanners();
+        LogDebug("Banners cleared");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

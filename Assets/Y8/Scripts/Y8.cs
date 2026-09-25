@@ -329,6 +329,124 @@ namespace Y8API
             return info;
         }
 
+        // ── Banners ───────────────────────────────────────────────────────────
+        //
+        // A banner is a display ad that stays on screen during play. The page puts it
+        // over the Unity canvas, centred on a placeholder you lay out in your UI (an
+        // empty RectTransform sized at least as large as the banner on screen).
+        // Y8BannerSlot does this for you and keeps the banner on the placeholder as
+        // it moves.
+        //
+        // The SDK paces banners per size: at most one new banner of each size every
+        // 180 s by default (never under 30 s), requested or refreshed automatically.
+
+        /// <summary>
+        /// Shows a banner of the given size centred on the placeholder.
+        /// IsSuccess (Data.shown) = the banner is showing. Otherwise Data.code says why
+        /// (see BannerResult); a failed request leaves any banner already
+        /// showing under this id where it was.
+        /// </summary>
+        /// <param name="id">Your name for this banner slot, used by MoveBanner / ClearBanner.</param>
+        public async Task<JsResponse<BannerResult>> RequestBannerAsync(
+            string id,
+            BannerSize size,
+            RectTransform placeholder
+        )
+        {
+            if (string.IsNullOrEmpty(GameId))
+            {
+                TryDebugLog("GameId not set – no banners");
+                return BannerFailure("bannersUnavailable", "GameId is not set on Y8Root");
+            }
+
+            if (!TryGetScreenPlacement(placeholder, out RectInt placement))
+            {
+                return BannerFailure("notVisible", "The placeholder is not on screen");
+            }
+
+            KeyValuePair<string, IConvertible>[] json =
+            {
+                new("id", id),
+                new("width", size.Width()),
+                new("height", size.Height()),
+                new("x", placement.x),
+                new("y", placement.y),
+                new("w", placement.width),
+                new("h", placement.height),
+                new("areaWidth", Screen.width),
+                new("areaHeight", Screen.height)
+            };
+
+            JsResponse<BannerResult> response = await TryCallAsync<BannerResult>("requestBanner", json);
+            // Not ready / editor: TryCallAsync gives no data
+            return response.Data != null
+                ? response
+                : BannerFailure("bannersUnavailable", "The Y8 SDK is not ready");
+        }
+
+        /// <summary>Moves a showing banner to where the placeholder is now; no new ad is requested.</summary>
+        public void MoveBanner(string id, RectTransform placeholder)
+        {
+            if (!TryGetScreenPlacement(placeholder, out RectInt placement))
+            {
+                return;
+            }
+
+            FireCall("moveBanner", new KeyValuePair<string, IConvertible>[]
+            {
+                new("id", id),
+                new("x", placement.x),
+                new("y", placement.y),
+                new("w", placement.width),
+                new("h", placement.height),
+                new("areaWidth", Screen.width),
+                new("areaHeight", Screen.height)
+            });
+        }
+
+        /// <summary>Removes the banner shown under this id.</summary>
+        public void ClearBanner(string id) =>
+            FireCall("clearBanner", new KeyValuePair<string, IConvertible>[] { new("id", id) });
+
+        /// <summary>Removes every banner.</summary>
+        public void ClearAllBanners() => FireCall("clearAllBanners", null);
+
+        /// <summary>
+        /// The placeholder's rectangle in screen pixels, counted from the top-left like the
+        /// page (Unity's screen space counts y from the bottom). Whole pixels: the JSON sent
+        /// to JS is built with the current culture, which would write 12.5 as "12,5".
+        /// </summary>
+        internal static bool TryGetScreenPlacement(RectTransform placeholder, out RectInt placement)
+        {
+            placement = default;
+            if (placeholder == null || !placeholder.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            Canvas canvas = placeholder.GetComponentInParent<Canvas>();
+            Canvas root = canvas != null ? canvas.rootCanvas : null;
+            Camera cam = root == null || root.renderMode == RenderMode.ScreenSpaceOverlay
+                ? null
+                : root.worldCamera;
+
+            Vector3[] corners = new Vector3[4];
+            placeholder.GetWorldCorners(corners);
+            Vector2 min = RectTransformUtility.WorldToScreenPoint(cam, corners[0]);
+            Vector2 max = RectTransformUtility.WorldToScreenPoint(cam, corners[2]);
+
+            placement = new RectInt(
+                Mathf.RoundToInt(min.x),
+                Mathf.RoundToInt(Screen.height - max.y),
+                Mathf.RoundToInt(max.x - min.x),
+                Mathf.RoundToInt(max.y - min.y)
+            );
+            return placement.width > 0 && placement.height > 0;
+        }
+
+        private static JsResponse<BannerResult> BannerFailure(string code, string message) =>
+            new(false, new BannerResult { code = code, message = message });
+
         // ── Achievements ──────────────────────────────────────────────────────
 
         /// <summary>Opens the achievements modal dialog.</summary>
@@ -634,6 +752,21 @@ namespace Y8API
             return (JsResponse<T>)response;
         }
 
+        // For calls JS does not answer (moveBanner, clearBanner, clearAllBanners).
+        private void FireCall(string requestName, KeyValuePair<string, IConvertible>[] kvPairs)
+        {
+            if (!isReady || Application.isEditor)
+            {
+                TryDebugLog($"Skipped \"{requestName}\" (SDK not ready or editor)");
+                return;
+            }
+
+            id++;
+            string json = ConvertListToJson(kvPairs);
+            TryDebugLog($"JS call [{id}] (no response) with JSON = {json}");
+            Call(id, requestName, json);
+        }
+
         private static string ConvertListToJson(KeyValuePair<string, IConvertible>[] kvList)
         {
             if (kvList == null)
@@ -782,6 +915,23 @@ namespace Y8API
                     response = new JsResponse<AdBreakInfo>(true, info);
                     break;
                 }
+                case "requestBanner":
+                {
+                    BannerResult d = JsonUtility.FromJson<BannerResult>(data) ?? new BannerResult();
+                    // JS answers {} when the SDK wasn't ready
+                    if (!d.shown && string.IsNullOrEmpty(d.code))
+                    {
+                        d.code = "bannersUnavailable";
+                    }
+
+                    response = new JsResponse<BannerResult>(d.shown, d);
+                    break;
+                }
+                // Fire-and-forget calls only answer when the SDK wasn't ready; nobody waits for them
+                case "moveBanner":
+                case "clearBanner":
+                case "clearAllBanners":
+                    return;
                 case "awardAchievement":
                 {
                     AchievementSave d = JsonUtility.FromJson<AchievementSave>(data);
