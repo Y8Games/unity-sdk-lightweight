@@ -19,6 +19,140 @@
             window._y8AdInFlight = false;
             window._y8PausedByAd = false;
 
+            // ── Banner slots ───────────────────────────────────────────────────
+            // The Unity canvas has no page element to put a banner in, so each banner
+            // gets one: a banner-sized element over the canvas, centred on the
+            // placeholder C# measured, which the SDK then fills. placement =
+            // { x, y, width, height, areaWidth, areaHeight }: the placeholder in screen
+            // pixels (top-left origin) out of a Screen.width x Screen.height area.
+            // Follows the canvas on window resize.
+            window._y8BannerSlots = window._y8BannerSlots || {
+                slots: {},
+                resizeListening: false,
+
+                elementId: function (id) { return 'y8-banner-' + id; },
+
+                // Where a slot's banner goes, in page CSS pixels, plus the placeholder's size on screen.
+                layout: function (canvas, placement, bannerWidth, bannerHeight) {
+                    var rect = canvas.getBoundingClientRect();
+                    var scaleX = rect.width / placement.areaWidth;
+                    var scaleY = rect.height / placement.areaHeight;
+                    var cssWidth = placement.width * scaleX;
+                    var cssHeight = placement.height * scaleY;
+                    return {
+                        left: rect.left + window.scrollX + placement.x * scaleX + (cssWidth - bannerWidth) / 2,
+                        top: rect.top + window.scrollY + placement.y * scaleY + (cssHeight - bannerHeight) / 2,
+                        cssWidth: cssWidth,
+                        cssHeight: cssHeight
+                    };
+                },
+
+                apply: function (slot) {
+                    var box = this.layout(slot.canvas, slot.placement, slot.width, slot.height);
+                    var style = slot.element.style;
+                    style.left = box.left + 'px';
+                    style.top = box.top + 'px';
+                    style.width = slot.width + 'px';
+                    style.height = slot.height + 'px';
+                },
+
+                listenForResize: function () {
+                    if (this.resizeListening) return;
+                    this.resizeListening = true;
+                    var self = this;
+                    window.addEventListener('resize', function () {
+                        for (var id in self.slots) self.apply(self.slots[id]);
+                    });
+                },
+
+                error: function (message, code) {
+                    var e = new Error(message);
+                    e.code = code;
+                    return e;
+                },
+
+                validPlacement: function (p) {
+                    return p && [p.x, p.y, p.width, p.height, p.areaWidth, p.areaHeight].every(isFinite)
+                        && p.width > 0 && p.height > 0 && p.areaWidth > 0 && p.areaHeight > 0;
+                },
+
+                // Resolves once a banner shows in the slot; rejects with the SDK's error codes. A
+                // rejected request leaves the slot exactly as it was, banner included.
+                request: function (sdk, canvas, id, width, height, placement) {
+                    if (!id) return Promise.reject(this.error('No banner id given', 'missingId'));
+                    if (!canvas) return Promise.reject(this.error('No game canvas found', 'notVisible'));
+                    if (!this.validPlacement(placement)) {
+                        return Promise.reject(this.error('Placement needs x, y, width, height, areaWidth and areaHeight', 'invalidSize'));
+                    }
+
+                    var box = this.layout(canvas, placement, width, height);
+                    if (box.cssWidth + 1 < width || box.cssHeight + 1 < height) {
+                        return Promise.reject(this.error('The placeholder is ' + Math.round(box.cssWidth) + 'x' + Math.round(box.cssHeight)
+                            + ' on screen, smaller than ' + width + 'x' + height, 'invalidSize'));
+                    }
+
+                    var existing = this.slots[id];
+                    var previous = existing && { width: existing.width, height: existing.height, placement: existing.placement, canvas: existing.canvas };
+                    var slot = existing;
+                    if (!slot) {
+                        var element = document.createElement('div');
+                        element.id = this.elementId(id);
+                        element.style.cssText = 'position:absolute;z-index:2147483000;';
+                        document.body.appendChild(element);
+                        slot = { element: element };
+                    }
+                    slot.width = width;
+                    slot.height = height;
+                    slot.placement = placement;
+                    slot.canvas = canvas;
+                    this.slots[id] = slot;
+                    this.apply(slot);
+                    this.listenForResize();
+
+                    var self = this;
+                    return sdk.requestBanner({ id: slot.element.id, width: width, height: height }).catch(function (e) {
+                        if (self.slots[id] === slot) {
+                            if (previous) {
+                                slot.width = previous.width;
+                                slot.height = previous.height;
+                                slot.placement = previous.placement;
+                                slot.canvas = previous.canvas;
+                                self.apply(slot);
+                            } else {
+                                self.remove(id);
+                            }
+                        }
+                        throw e;
+                    });
+                },
+
+                // Follows the placeholder when the game moves it; no new ad is requested.
+                move: function (id, placement) {
+                    var slot = this.slots[id];
+                    if (!slot || !this.validPlacement(placement)) return;
+                    slot.placement = placement;
+                    this.apply(slot);
+                },
+
+                remove: function (id) {
+                    var slot = this.slots[id];
+                    if (!slot) return;
+                    delete this.slots[id];
+                    slot.element.remove();
+                },
+
+                clear: function (sdk, id) {
+                    if (!this.slots[id]) return;
+                    sdk.clearBanner(this.elementId(id));
+                    this.remove(id);
+                },
+
+                clearAll: function (sdk) {
+                    sdk.clearAllBanners();
+                    for (var id in this.slots) this.remove(id);
+                }
+            };
+
             function onSdkReady() {
                 var y8Sdk = y8.sdk();
                 window._y8Sdk = y8Sdk;
@@ -282,6 +416,49 @@
                             });
                         break;
                     }
+
+                // ── Banners ───────────────────────────────────────────────────
+                //
+                // requestBanner answers { shown: true } once the banner shows, or
+                // { shown: false, code } with the SDK's error code. moveBanner /
+                // clearBanner / clearAllBanners don't answer; C# doesn't wait for them.
+                case 'requestBanner':
+                    if (!sdk.requestBanner) {
+                        respond({ shown: false, code: 'bannersUnavailable', message: 'This Y8 SDK has no banner support' });
+                        break;
+                    }
+                    window._y8BannerSlots.request(
+                        sdk,
+                        Module['canvas'] || document.querySelector('canvas'),
+                        jsonData.id,
+                        jsonData.width,
+                        jsonData.height,
+                        {
+                            x: jsonData.x, y: jsonData.y, width: jsonData.w, height: jsonData.h,
+                            areaWidth: jsonData.areaWidth, areaHeight: jsonData.areaHeight
+                        }
+                    )
+                        .then(function () { respond({ shown: true, code: '', message: '' }); })
+                        .catch(function (e) {
+                            console.warn('[Y8] requestBanner:', e);
+                            respond({ shown: false, code: (e && e.code) || 'other', message: (e && e.message) || String(e) });
+                        });
+                    break;
+
+                case 'moveBanner':
+                    window._y8BannerSlots.move(jsonData.id, {
+                        x: jsonData.x, y: jsonData.y, width: jsonData.w, height: jsonData.h,
+                        areaWidth: jsonData.areaWidth, areaHeight: jsonData.areaHeight
+                    });
+                    break;
+
+                case 'clearBanner':
+                    if (sdk.clearBanner) window._y8BannerSlots.clear(sdk, jsonData.id);
+                    break;
+
+                case 'clearAllBanners':
+                    if (sdk.clearAllBanners) window._y8BannerSlots.clearAll(sdk);
+                    break;
 
                 // ── Achievements ──────────────────────────────────────────────
                 case 'getAchievements':
